@@ -1,4 +1,4 @@
-const CACHE = 'finapp-v1';
+const CACHE = 'finapp-v2';
 const ASSETS = [
   '/finances/',
   '/finances/index.html',
@@ -23,8 +23,12 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   e.respondWith(
-    caches.match(e.request).then(cached => {
-      return cached || fetch(e.request).catch(() => caches.match('/finances/index.html'));
-    })
+    fetch(e.request)
+      .then(res => {
+        const clone = res.clone();
+        caches.open(CACHE).then(c => c.put(e.request, clone));
+        return res;
+      })
+      .catch(() => caches.match(e.request))
   );
 });

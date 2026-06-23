@@ -1589,26 +1589,33 @@ async function parseReceipt(input) {
     await worker.terminate();
     URL.revokeObjectURL(imgUrl);
 
-    // parse amount — look for biggest number with decimals or currency signs
+    // parse amount — look for ИТОГО / СУММА / TOTAL keywords
     const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
     let foundAmount = null;
 
-    // look for ИТОГО / ИТОГ / TOTAL / СУММА
+    const keywords = /итог|total|сумма|к\s*оплате|к\s*оплат|amount|sum/i;
+    const numPattern = /(\d[\d\s]*[.,]\d{2}|\d{2,6})/g;
+
     for (const line of lines) {
-      if (/итог|total|сумма|к\s*оплате|к\s*оплат/i.test(line)) {
-        const nums = line.match(/[\d\s]+[.,]\d{2}/g) || line.match(/[\d\s]{3,}/g);
-        if (nums) {
-          const val = parseFloat(nums[nums.length-1].replace(/\s/g,'').replace(',','.'));
-          if (val > 0) { foundAmount = val; break; }
+      if (keywords.test(line)) {
+        const nums = [...line.matchAll(numPattern)].map(m =>
+          parseFloat(m[0].replace(/\s/g,'').replace(',','.'))
+        ).filter(n => n > 0 && n < 500000);
+        if (nums.length) {
+          foundAmount = nums[nums.length - 1];
+          break;
         }
       }
     }
-    // fallback: largest number on the page
+
+    // fallback: look for price-like numbers (X.XX or X,XX format only) near end of lines
     if (!foundAmount) {
-      const allNums = [];
-      text.replace(/[\d\s]+[.,]\d{2}/g, m => allNums.push(parseFloat(m.replace(/\s/g,'').replace(',','.'))));
-      text.replace(/\b\d{3,}\b/g, m => allNums.push(parseFloat(m)));
-      if (allNums.length) foundAmount = Math.max(...allNums.filter(n=>n>0&&n<1000000));
+      const priceLines = lines.filter(l => /\d+[.,]\d{2}\s*₽?$/.test(l));
+      const prices = priceLines.map(l => {
+        const m = l.match(/(\d[\d\s]*[.,]\d{2})\s*₽?$/);
+        return m ? parseFloat(m[1].replace(/\s/g,'').replace(',','.')) : 0;
+      }).filter(n => n > 0 && n < 500000);
+      if (prices.length) foundAmount = Math.max(...prices);
     }
 
     if (foundAmount) {
