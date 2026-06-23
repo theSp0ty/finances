@@ -126,8 +126,8 @@ body.light .nav { background: rgba(242,242,247,0.95); }
 
 /* PERIOD TABS */
 .period-tabs { display: flex; background: var(--bg2); border-radius: 10px; padding: 3px; gap: 2px; }
-.period-tab { flex: 1; text-align: center; padding: 6px 0; font-size: 12px; color: var(--text3); border-radius: 8px; cursor: pointer; border: none; background: none; font-family: var(--font); transition: all 0.2s; }
-.period-tab.active { background: var(--bg4); color: var(--text); font-weight: 500; }
+.period-tab { flex: 1; text-align: center; padding: 6px 0; font-size: 12px; color: var(--text3); border-radius: 8px; cursor: pointer; border: none; background: transparent; font-family: var(--font); transition: all 0.2s; -webkit-appearance: none; appearance: none; }
+.period-tab.active { background: var(--bg4); color: var(--text) !important; font-weight: 500; }
 
 /* SEARCH */
 .search-bar { display: flex; align-items: center; gap: 8px; background: var(--bg2); border: 0.5px solid var(--border); border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: 12px; }
@@ -135,8 +135,8 @@ body.light .nav { background: rgba(242,242,247,0.95); }
 .search-bar input { flex: 1; background: none; border: none; color: var(--text); font-size: 14px; font-family: var(--font); outline: none; }
 .search-bar input::placeholder { color: var(--text3); }
 .filter-chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin-bottom: 12px; padding-bottom: 2px; }
-.filter-chip { flex-shrink: 0; padding: 5px 12px; border-radius: 20px; font-size: 12px; border: 0.5px solid var(--border2); color: var(--text3); background: none; cursor: pointer; font-family: var(--font); white-space: nowrap; }
-.filter-chip.active { background: var(--blue); color: white; border-color: transparent; }
+.filter-chip { flex-shrink: 0; padding: 5px 12px; border-radius: 20px; font-size: 12px; border: 0.5px solid var(--border2); color: var(--text3); background: var(--bg2); cursor: pointer; font-family: var(--font); white-space: nowrap; -webkit-appearance: none; appearance: none; }
+.filter-chip.active { background: var(--blue); color: #ffffff !important; border-color: transparent; }
 
 /* BUDGET BARS */
 .budget-item { margin-bottom: 14px; }
@@ -242,9 +242,9 @@ body.light .nav { background: rgba(242,242,247,0.95); }
 .empty-text { font-size: 14px; }
 
 /* STATS PAGE */
-.stat-tabs { display: flex; gap: 8px; padding: 0 20px 16px; overflow-x: auto; scrollbar-width: none; }
-.stat-tab { flex-shrink: 0; padding: 6px 14px; border-radius: 20px; font-size: 13px; border: 0.5px solid var(--border2); color: var(--text3); background: none; cursor: pointer; font-family: var(--font); }
-.stat-tab.active { background: var(--blue); color: white; border-color: transparent; }
+.stat-tabs { display: flex; gap: 8px; padding: 0 20px 16px; }
+.stat-tab { flex: 1; padding: 8px 4px; border-radius: 20px; font-size: 13px; font-weight: 500; border: 0.5px solid var(--border2); color: var(--text3); background: var(--bg2); cursor: pointer; font-family: var(--font); -webkit-appearance: none; appearance: none; white-space: nowrap; text-align: center; }
+.stat-tab.active { background: var(--blue); color: #ffffff !important; border-color: transparent; }
 
 /* SETTINGS */
 .settings-section { padding: 0 20px; margin-bottom: 24px; }
@@ -392,9 +392,9 @@ select.form-input option { background: #1c1c26; }
     <div class="header-balance" style="font-size:26px">Статистика</div>
   </div>
   <div class="stat-tabs">
-    <button class="stat-tab active" onclick="setStatPeriod('month',this)">Месяц</button>
-    <button class="stat-tab" onclick="setStatPeriod('week',this)">Неделя</button>
-    <button class="stat-tab" onclick="setStatPeriod('all',this)">Всё время</button>
+    <button class="stat-tab active" onclick="setStatPeriod('month',this)" style="color:#ffffff;background:#5b8fff;border-color:transparent">Месяц</button>
+    <button class="stat-tab" onclick="setStatPeriod('week',this)" style="color:#9090a8">Неделя</button>
+    <button class="stat-tab" onclick="setStatPeriod('all',this)" style="color:#9090a8">Всё</button>
   </div>
   <div class="section" style="padding:0 20px">
     <div class="month-compare" id="month-compare"></div>
@@ -476,6 +476,14 @@ select.form-input option { background: #1c1c26; }
 
 <!-- BOTTOM NAV -->
 <nav class="nav">
+  <button class="nav-btn" onclick="showPage('page-budgets',this)">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+    Бюджеты
+  </button>
+  <button class="nav-btn" onclick="showPage('page-stats',this)">
+    <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+    Статистика
+  </button>
   <button class="nav-btn active" onclick="showPage('page-home',this)">
     <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
     Главная
@@ -483,14 +491,6 @@ select.form-input option { background: #1c1c26; }
   <button class="nav-btn" onclick="showPage('page-history',this)">
     <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
     История
-  </button>
-  <button class="nav-btn" onclick="showPage('page-stats',this)">
-    <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-    Статистика
-  </button>
-  <button class="nav-btn" onclick="showPage('page-budgets',this)">
-    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
-    Бюджеты
   </button>
   <button class="nav-btn" onclick="showPage('page-settings',this)">
     <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
@@ -758,7 +758,7 @@ function showPage(id, btn) {
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
   else {
-    const map = {'page-home':0,'page-history':1,'page-stats':2,'page-budgets':3,'page-settings':4};
+    const map = {'page-budgets':0,'page-stats':1,'page-home':2,'page-history':3,'page-settings':4};
     document.querySelectorAll('.nav-btn')[map[id] ?? 0].classList.add('active');
   }
   if (id === 'page-home') renderHome();
@@ -1220,8 +1220,14 @@ function setFilterCat(cat) { state.filterCat = cat; buildFilterChips(); renderHi
 
 function setPeriod(p, btn) {
   state.historyPeriod = p;
-  document.querySelectorAll('#history-period .period-tab').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('#history-period .period-tab').forEach(b => {
+    b.classList.remove('active');
+    b.style.color = '#5a5a72';
+    b.style.background = 'transparent';
+  });
   btn.classList.add('active');
+  btn.style.color = '#f0f0f8';
+  btn.style.background = '#242433';
   renderHistory();
 }
 
@@ -1274,8 +1280,14 @@ function renderHistory() {
 // ---- STATS ----
 function setStatPeriod(p, btn) {
   state.statPeriod = p;
-  document.querySelectorAll('.stat-tab').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.stat-tab').forEach(b => {
+    b.classList.remove('active');
+    b.style.color = '#5a5a72';
+    b.style.background = 'transparent';
+  });
   btn.classList.add('active');
+  btn.style.color = '#ffffff';
+  btn.style.background = '#5b8fff';
   renderStats();
 }
 
@@ -1619,12 +1631,22 @@ async function parseReceipt(input) {
 function exportCSV() {
   const rows = [['Дата','Тип','Название','Категория','Сумма','Валюта','Счёт','Сумма в ₽','Повтор','Заметка']];
   state.transactions.forEach(tx => {
-    rows.push([tx.date, tx.type==='income'?'Доход':tx.type==='transfer'?'Перевод':'Расход',
-      tx.name, tx.cat, tx.amount, tx.currency, tx.account,
-      Math.round(toRub(tx.amount,tx.currency)), tx.recurring?'Да':'', tx.note||'']);
+    rows.push([
+      tx.date,
+      tx.type==='income'?'Доход':tx.type==='transfer'?'Перевод':'Расход',
+      tx.name,
+      tx.cat,
+      String(tx.amount).replace('.',','),
+      tx.currency,
+      tx.account || '',
+      String(Math.round(toRub(tx.amount,tx.currency))).replace('.',','),
+      tx.recurring?'Да':'',
+      tx.note||''
+    ]);
   });
-  const csv = rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
-  downloadFile(csv, 'finance.csv', 'text/csv');
+  // BOM + semicolon separator for correct Excel/Numbers opening with Cyrillic
+  const csv = '\uFEFF' + rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(';')).join('\r\n');
+  downloadFile(csv, 'finance.csv', 'text/csv;charset=utf-8');
   showToast('📊 CSV экспортирован');
 }
 function exportJSON() {
@@ -1711,9 +1733,17 @@ applyRecurring();
 autoFetchRateIfStale();
 if (!state.rateUpdatedAt) fetchRate();
 
-// PWA Shortcuts support
+// PWA — Service Worker
 if ('serviceWorker' in navigator) {
-  // minimal SW registration placeholder for PWA shortcuts
+  navigator.serviceWorker.register('/finances/sw.js', { scope: '/finances/' })
+    .catch(e => console.log('SW:', e));
+}
+
+// PWA Shortcuts — handle ?action=
+const urlParams = new URLSearchParams(window.location.search);
+const actionParam = urlParams.get('action');
+if (actionParam === 'expense' || actionParam === 'income') {
+  setTimeout(() => { openAddModal(); if (actionParam === 'income') setType('income'); }, 400);
 }
 </script>
 </body>
