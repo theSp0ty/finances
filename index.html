@@ -1752,7 +1752,7 @@ function downloadFile(content, filename, type) {
 }
 function clearAll() {
   if (confirm('Удалить все данные? Это нельзя отменить.')) {
-    state.transactions = []; state.budgets = []; state.goals = [];
+    state.transactions = []; state.budgets = []; state.goals = []; state.debts = [];
     save(); renderHome(); showToast('🗑️ Данные удалены');
   }
 }
@@ -1871,7 +1871,7 @@ function renderDebts() {
       ${showClose ? `<div class="debt-actions">
         <button class="debt-btn close" onclick="closeDebt(${d.id})">✅ Закрыть</button>
         <button class="debt-btn" style="color:var(--red)" onclick="deleteDebt(${d.id})">🗑️</button>
-      </div>` : `<div style="font-size:11px;color:var(--green);margin-top:8px">✅ Закрыт</div>`}
+      </div>` : `<div class="debt-actions"><div style="font-size:11px;color:var(--green);">✅ Закрыт</div><button class="debt-btn" style="color:var(--red)" onclick="deleteDebt(${d.id})">🗑️</button></div>`}
     </div>`;
 
   const listEl = document.getElementById('debts-list');
