@@ -10,7 +10,6 @@
 <title>Мои финансы</title>
 <link rel="manifest" href="manifest.json">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 :root {
@@ -514,7 +513,7 @@ select.form-input option { background: #1c1c26; }
     </div>
 
     <label class="ocr-btn" for="ocr-input">
-      📷 Сфотографировать чек (Tesseract OCR)
+      📷 Сфотографировать чек
     </label>
     <input type="file" id="ocr-input" accept="image/*" capture="environment" onchange="parseReceipt(this)">
     <div id="ocr-status" class="ocr-status" style="display:none"></div>
@@ -854,7 +853,7 @@ function setType(type) {
   document.getElementById('transfer-fields').style.display = type === 'transfer' ? '' : 'none';
   document.getElementById('cat-section').style.display = type === 'transfer' ? 'none' : '';
   document.getElementById('account-section').style.display = type === 'transfer' ? 'none' : '';
-  document.querySelector('label[for="ocr-input"]').style.display = type === 'transfer' ? 'none' : '';
+  document.querySelector('label[for="ocr-input"]').style.display = type === 'expense' ? '' : 'none';
   renderCatGrid();
 }
 
@@ -1561,7 +1560,9 @@ function autoFetchRateIfStale() {
   if (age > 12) fetchRate();
 }
 
-// ---- OCR (Tesseract.js) ----
+// ---- OCR (Google Cloud Vision) ----
+const VISION_KEY = 'AIzaSyCANlt6_g1gW7DHJBelToY7XN4sW_ikDas';
+
 async function parseReceipt(input) {
   const file = input.files[0];
   if (!file) return;
@@ -1570,53 +1571,66 @@ async function parseReceipt(input) {
   const progressFill = document.getElementById('ocr-progress-fill');
   status.style.display = 'block';
   progressBar.style.display = 'block';
-  status.innerHTML = '⏳ Загружаю Tesseract OCR...';
-  progressFill.style.width = '5%';
+  status.innerHTML = '⏳ Распознаю чек...';
+  progressFill.style.width = '30%';
 
   try {
-    const imgUrl = URL.createObjectURL(file);
-    const worker = await Tesseract.createWorker('rus+eng', 1, {
-      logger: m => {
-        if (m.status === 'recognizing text') {
-          const pct = Math.round(m.progress * 100);
-          progressFill.style.width = pct + '%';
-          status.innerHTML = `⏳ Распознаю: ${pct}%`;
-        }
-      }
+    const base64 = await new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result.split(',')[1]);
+      r.onerror = () => rej(new Error('Read failed'));
+      r.readAsDataURL(file);
     });
 
-    const { data: { text } } = await worker.recognize(imgUrl);
-    await worker.terminate();
-    URL.revokeObjectURL(imgUrl);
+    progressFill.style.width = '60%';
 
-    // parse amount — look for ИТОГО / СУММА / TOTAL keywords
+    const response = await fetch(
+      `https://vision.googleapis.com/v1/images:annotate?key=${VISION_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requests: [{
+            image: { content: base64 },
+            features: [{ type: 'TEXT_DETECTION', maxResults: 1 }]
+          }]
+        })
+      }
+    );
+
+    progressFill.style.width = '90%';
+    const data = await response.json();
+    const text = data.responses?.[0]?.fullTextAnnotation?.text || '';
+
+    if (!text) throw new Error('no text');
+
     const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
     let foundAmount = null;
 
+    // ищем строку с ИТОГО / СУММА / TOTAL
     const keywords = /итог|total|сумма|к\s*оплате|к\s*оплат|amount|sum/i;
-    const numPattern = /(\d[\d\s]*[.,]\d{2}|\d{2,6})/g;
+    const numPattern = /(\d[\d\s]*[.,]\d{2}|\d{3,})/g;
 
     for (const line of lines) {
       if (keywords.test(line)) {
-        const nums = [...line.matchAll(numPattern)].map(m =>
-          parseFloat(m[0].replace(/\s/g,'').replace(',','.'))
-        ).filter(n => n > 0 && n < 500000);
-        if (nums.length) {
-          foundAmount = nums[nums.length - 1];
-          break;
-        }
+        const nums = [...line.matchAll(numPattern)]
+          .map(m => parseFloat(m[0].replace(/\s/g,'').replace(',','.')))
+          .filter(n => n > 0 && n < 500000);
+        if (nums.length) { foundAmount = nums[nums.length - 1]; break; }
       }
     }
 
-    // fallback: look for price-like numbers (X.XX or X,XX format only) near end of lines
+    // fallback: максимальная цена в формате X.XX или X,XX
     if (!foundAmount) {
-      const priceLines = lines.filter(l => /\d+[.,]\d{2}\s*₽?$/.test(l));
+      const priceLines = lines.filter(l => /\d+[.,]\d{2}\s*[₽р]?$/.test(l));
       const prices = priceLines.map(l => {
-        const m = l.match(/(\d[\d\s]*[.,]\d{2})\s*₽?$/);
+        const m = l.match(/(\d[\d\s]*[.,]\d{2})\s*[₽р]?$/);
         return m ? parseFloat(m[1].replace(/\s/g,'').replace(',','.')) : 0;
-      }).filter(n => n > 0 && n < 500000);
+      }).filter(n => n > 10 && n < 500000);
       if (prices.length) foundAmount = Math.max(...prices);
     }
+
+    progressFill.style.width = '100%';
 
     if (foundAmount) {
       document.getElementById('tx-amount').value = foundAmount;
@@ -1627,7 +1641,7 @@ async function parseReceipt(input) {
     progressBar.style.display = 'none';
     setTimeout(() => { status.style.display = 'none'; }, 4000);
   } catch(e) {
-    status.innerHTML = '❌ Ошибка OCR. Введи вручную.';
+    status.innerHTML = '❌ Ошибка распознавания. Введи вручную.';
     progressBar.style.display = 'none';
     setTimeout(() => { status.style.display = 'none'; }, 3000);
   }
