@@ -1,0 +1,34 @@
+{
+  "name": "Мои финансы",
+  "short_name": "Финансы",
+  "description": "Учёт доходов и расходов",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0f",
+  "theme_color": "#0a0a0f",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%230a0a0f'/><text y='68' font-size='60' text-anchor='middle' x='50'>💰</text></svg>",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Добавить расход",
+      "short_name": "Расход",
+      "description": "Быстро добавить расход",
+      "url": "/?action=expense",
+      "icons": [{ "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23ff5a5a'/><text y='68' font-size='60' text-anchor='middle' x='50'>➖</text></svg>", "sizes": "any" }]
+    },
+    {
+      "name": "Добавить доход",
+      "short_name": "Доход",
+      "description": "Быстро добавить доход",
+      "url": "/?action=income",
+      "icons": [{ "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%232ecc8a'/><text y='68' font-size='60' text-anchor='middle' x='50'>➕</text></svg>", "sizes": "any" }]
+    }
+  ]
+}
