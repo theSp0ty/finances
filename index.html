@@ -354,6 +354,8 @@ select.form-input option { background: #1c1c26; }
     </div>
   </div>
 
+  <div id="planned-note" style="display:none;margin:0 20px 12px;padding:8px 12px;background:var(--purple-bg);border:0.5px solid rgba(167,139,250,0.25);border-radius:var(--radius-sm);font-size:12px;color:var(--text2)"></div>
+
   <div id="rate-bar" class="rate-row">
     <span>💱 USD</span>
     <span class="rate-val" id="rate-display">1$ = 88 ₽</span>
@@ -428,7 +430,7 @@ select.form-input option { background: #1c1c26; }
   <div class="section" style="padding-top:0">
     <div class="search-bar">
       <svg viewBox="0 0 24 24" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input type="text" id="history-search" placeholder="Поиск..." oninput="renderHistory()">
+      <input type="text" id="history-search" placeholder="Поиск..." oninput="resetHistoryLimit(); renderHistory()">
     </div>
     <div class="filter-chips" id="filter-chips"></div>
     <div class="period-tabs" id="history-period" style="margin-bottom:16px">
@@ -630,6 +632,22 @@ select.form-input option { background: #1c1c26; }
       <label class="form-label">За что</label>
       <input class="form-input" id="debt-reason" type="text" placeholder="Обед, поездка, займ...">
     </div>
+    <div class="form-group" style="display:flex;align-items:center;justify-content:space-between;background:var(--bg3);border-radius:var(--radius-sm);padding:12px 14px">
+      <div style="flex:1">
+        <div style="font-size:14px">💰 Деньги уже перешли</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px" id="debt-money-hint">Записать операцию и изменить баланс</div>
+      </div>
+      <button class="toggle" id="debt-money-toggle" onclick="toggleDebtMoney()"></button>
+    </div>
+    <div class="form-group" id="debt-account-row" style="display:none">
+      <label class="form-label">Счёт</label>
+      <select class="form-input" id="debt-account">
+        <option value="card">💳 Карта</option>
+        <option value="cash">💵 Наличные</option>
+        <option value="crypto">₿ Крипта</option>
+        <option value="invest">📈 Инвестиции</option>
+      </select>
+    </div>
     <button class="submit-btn" onclick="saveDebt()">Добавить</button>
   </div>
 </div>
@@ -650,6 +668,19 @@ select.form-input option { background: #1c1c26; }
   <div class="voice-actions">
     <button class="voice-cancel" onclick="stopVoice()">Отмена</button>
     <button class="voice-done" onclick="finishVoice()">Готово</button>
+  </div>
+</div>
+
+<!-- UNIVERSAL DIALOG (заменяет alert / confirm / prompt) -->
+<div class="modal-bg" id="dialog-modal" onclick="dialogDismiss()">
+  <div class="modal" onclick="event.stopPropagation()" style="border-radius:20px;max-width:340px;margin:auto;padding:22px">
+    <div class="modal-title" id="dialog-title" style="margin-bottom:10px"></div>
+    <div id="dialog-text" style="font-size:14px;color:var(--text2);line-height:1.5;margin-bottom:16px"></div>
+    <input class="form-input" id="dialog-input" style="display:none;margin-bottom:16px">
+    <div style="display:flex;gap:10px">
+      <button class="submit-btn" id="dialog-cancel" style="background:var(--bg3);color:var(--text2)" onclick="dialogDismiss()">Отмена</button>
+      <button class="submit-btn" id="dialog-ok" onclick="dialogAccept()">ОК</button>
+    </div>
   </div>
 </div>
 
@@ -833,6 +864,19 @@ select.form-input option { background: #1c1c26; }
         <button class="preset-btn" onclick="addGoalPreset(5000)">+5 000</button>
       </div>
     </div>
+    <div class="form-group">
+      <label class="form-label">Откуда переложить</label>
+      <select class="form-input" id="goal-add-account">
+        <option value="card">💳 Карта → 🏦 Копилка</option>
+        <option value="cash">💵 Наличные → 🏦 Копилка</option>
+        <option value="crypto">₿ Крипта → 🏦 Копилка</option>
+        <option value="invest">📈 Инвестиции → 🏦 Копилка</option>
+        <option value="none">Не двигать деньги (уже отложены)</option>
+      </select>
+      <div style="font-size:11px;color:var(--text3);margin-top:6px">
+        Деньги переедут на счёт «Копилка» — общий баланс не изменится, но будет видно, сколько отложено.
+      </div>
+    </div>
     <button class="submit-btn" onclick="addToGoal()">Пополнить</button>
   </div>
 </div>
@@ -863,6 +907,7 @@ const ACCOUNTS = [
   {id:'cash',label:'Наличные',icon:'💵',type:'Кошелёк'},
   {id:'crypto',label:'Крипта',icon:'₿',type:'Криптокошелёк'},
   {id:'invest',label:'Инвестиции',icon:'📈',type:'Брокерский счёт'},
+  {id:'savings',label:'Копилка',icon:'🏦',type:'Накопления на цели'},
 ];
 
 // Ключевые слова → категория. Используется и в OCR (по названию магазина), и в голосе.
@@ -900,8 +945,25 @@ let state = {
 
 let charts = { bar: null, donut: null, line: null };
 
+const HISTORY_PAGE = 100;      // операций в одной порции истории
+let historyLimit = HISTORY_PAGE;
+
+// Date.now() давал одинаковый id при добавлении нескольких записей за одну
+// миллисекунду (голосовой ввод, повторяющиеся операции) — и они перетирали
+// друг друга при редактировании и удалении.
+let idCounter = 0;
+function nextId() {
+  const now = Date.now();
+  idCounter = now > idCounter ? now : idCounter + 1;
+  return idCounter;
+}
+
 // ---- HELPERS ----
 // Экранирование: имена, заметки и названия целей попадают в innerHTML.
+// Значение, безопасное для подстановки аргументом в inline-обработчик:
+// JSON даёт корректный JS-литерал, esc — корректный HTML-атрибут.
+function attrArg(v) { return esc(JSON.stringify(v === undefined ? null : v)); }
+
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c =>
     ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -947,8 +1009,27 @@ function load() {
     }
   } catch(e) {}
 }
+// Отказ записи (переполненная квота, приватный режим Safari) раньше глотался
+// молча: приложение рапортовало об успехе, а данные терялись при закрытии.
+let storageFailed = false;
 function save() {
-  try { localStorage.setItem('finapp_v3', JSON.stringify(state)); } catch(e) {}
+  try {
+    localStorage.setItem('finapp_v3', JSON.stringify(state));
+    storageFailed = false;
+    return true;
+  } catch (e) {
+    if (!storageFailed) {
+      storageFailed = true;
+      showToast('⚠️ Данные НЕ сохранены!');
+      setTimeout(() => uiAlert(
+        'Браузер отказался сохранить данные — хранилище переполнено или недоступно ' +
+        '(например, приватный режим).\n\nСделайте резервную копию: Настройки → Экспорт. ' +
+        'Иначе изменения пропадут при закрытии вкладки.',
+        '⚠️ Не удалось сохранить'
+      ), 400);
+    }
+    return false;
+  }
 }
 function toRub(amount, currency) { return currency === 'USD' ? amount * state.usdRate : amount; }
 function fmt(n, currency) {
@@ -957,12 +1038,44 @@ function fmt(n, currency) {
 }
 function fmtRub(n) { return Math.round(n).toLocaleString('ru-RU') + ' ₽'; }
 
+// Локальная дата в формате YYYY-MM-DD. toISOString() переводит в UTC и в
+// плюсовых поясах после 21:00 отдаёт следующий день.
+function isoDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function plural(n, one, few, many) {
+  const a = Math.abs(n) % 100, b = a % 10;
+  if (a > 10 && a < 20) return many;
+  if (b > 1 && b < 5) return few;
+  if (b === 1) return one;
+  return many;
+}
+
 // ---- TOAST ----
+let toastTimer = null;
 function showToast(msg) {
   const t = document.getElementById('toast');
+  clearTimeout(toastTimer);
   t.textContent = msg;
   t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2500);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// Тост с кнопкой отмены: удаление операции больше не безвозвратно.
+function showUndoToast(msg, onUndo) {
+  const t = document.getElementById('toast');
+  clearTimeout(toastTimer);
+  t.innerHTML = `<span>${esc(msg)}</span>
+    <button id="undo-btn" style="margin-left:12px;background:none;border:none;color:var(--blue);font-size:14px;font-weight:600;font-family:var(--font);cursor:pointer;padding:0">Отменить</button>`;
+  t.classList.add('show');
+  const btn = document.getElementById('undo-btn');
+  btn.onclick = () => {
+    clearTimeout(toastTimer);
+    t.classList.remove('show');
+    onUndo();
+  };
+  toastTimer = setTimeout(() => t.classList.remove('show'), 6000);
 }
 
 // ---- HAPTIC ----
@@ -1014,7 +1127,7 @@ function openAddModal() {
   document.getElementById('tx-amount').value = '';
   document.getElementById('tx-name').value = '';
   document.getElementById('tx-note').value = '';
-  document.getElementById('tx-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('tx-date').value = isoDate(new Date());
   document.getElementById('ocr-status').style.display = 'none';
   document.getElementById('ocr-progress').style.display = 'none';
   document.getElementById('ocr-found').style.display = 'none';
@@ -1049,6 +1162,68 @@ function openEditModal(id) {
 }
 
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+// ---- ДИАЛОГИ ----
+// Свои модалки вместо alert/confirm/prompt: те выглядят чужеродно в PWA
+// и на iOS в standalone-режиме показывают адрес сайта в заголовке.
+let dialogResolve = null;
+
+function openDialog(opts) {
+  return new Promise(resolve => {
+    dialogResolve = resolve;
+    document.getElementById('dialog-title').textContent = opts.title || '';
+    document.getElementById('dialog-text').innerHTML =
+      opts.html || esc(opts.text || '').replace(/\n/g, '<br>');
+    const inp = document.getElementById('dialog-input');
+    inp.style.display = opts.input ? '' : 'none';
+    inp.type = opts.input === 'number' ? 'number' : 'text';
+    inp.value = opts.defaultValue != null ? opts.defaultValue : '';
+    const cancel = document.getElementById('dialog-cancel');
+    cancel.style.display = opts.noCancel ? 'none' : '';
+    cancel.textContent = opts.cancelLabel || 'Отмена';
+    const ok = document.getElementById('dialog-ok');
+    ok.textContent = opts.okLabel || 'ОК';
+    ok.style.background = opts.danger ? 'var(--red)' : 'var(--blue)';
+    document.getElementById('dialog-modal').classList.add('open');
+    if (opts.input) setTimeout(() => { inp.focus(); inp.select(); }, 60);
+  });
+}
+
+function dialogAccept() {
+  const inp = document.getElementById('dialog-input');
+  const val = inp.style.display === 'none' ? true : inp.value;
+  closeModal('dialog-modal');
+  const r = dialogResolve; dialogResolve = null;
+  if (r) r(val);
+}
+
+function dialogDismiss() {
+  closeModal('dialog-modal');
+  const r = dialogResolve; dialogResolve = null;
+  if (r) r(null);
+}
+
+const uiAlert = (text, title) => openDialog({ title: title || 'Внимание', text, noCancel: true });
+const uiConfirm = (text, opts) => openDialog(Object.assign({
+  title: 'Подтверждение', text, okLabel: 'Да'
+}, opts || {})).then(v => v !== null);
+const uiPrompt = (text, defaultValue, opts) => openDialog(Object.assign({
+  title: '', text, input: 'text', defaultValue
+}, opts || {}));
+
+// Escape закрывает верхнюю открытую модалку, Enter подтверждает диалог.
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    const dialog = document.getElementById('dialog-modal');
+    if (dialog.classList.contains('open')) { dialogDismiss(); return; }
+    if (document.getElementById('voice-overlay').classList.contains('open')) { stopVoice(); return; }
+    const open = [...document.querySelectorAll('.modal-bg.open')].pop();
+    if (open) open.classList.remove('open');
+  } else if (e.key === 'Enter') {
+    const dialog = document.getElementById('dialog-modal');
+    if (dialog.classList.contains('open') && document.activeElement.id !== 'dialog-cancel') dialogAccept();
+  }
+});
 
 function openBudgetModal() {
   const sel = document.getElementById('budget-cat');
@@ -1159,18 +1334,18 @@ function pickAutocomplete(idx) {
 // ---- ADD/EDIT TRANSACTION ----
 function addTransaction() {
   const amount = parseFloat(document.getElementById('tx-amount').value);
-  if (!amount || amount <= 0) { alert('Введи сумму'); return; }
+  if (!amount || amount <= 0) { showToast('⚠️ Введите сумму'); return; }
   const currency = document.getElementById('tx-currency').value;
-  const date = document.getElementById('tx-date').value || new Date().toISOString().split('T')[0];
+  const date = document.getElementById('tx-date').value || isoDate(new Date());
   const note = document.getElementById('tx-note').value.trim();
 
   if (state.currentType === 'transfer') {
     const fromAcc = document.getElementById('tx-from-account').value;
     const toAcc = document.getElementById('tx-to-account').value;
-    if (fromAcc === toAcc) { alert('Выбери разные счета'); return; }
+    if (fromAcc === toAcc) { showToast('⚠️ Выберите разные счета'); return; }
     const ACCOUNT_LABELS = {card:'💳 Карта',cash:'💵 Наличные',crypto:'₿ Крипта',invest:'📈 Инвестиции'};
     const tx = {
-      id: Date.now(), type: 'transfer', amount, currency,
+      id: nextId(), type: 'transfer', amount, currency,
       name: `Перевод: ${ACCOUNT_LABELS[fromAcc]} → ${ACCOUNT_LABELS[toAcc]}`,
       cat: 'transfer', account: fromAcc, toAccount: toAcc, date, note,
       createdAt: new Date().toISOString()
@@ -1191,7 +1366,7 @@ function addTransaction() {
   const cat = state.selectedCat || (state.currentType === 'expense' ? 'other' : 'salary');
 
   const tx = {
-    id: state.editingTxId || Date.now(),
+    id: state.editingTxId || nextId(),
     type: state.currentType, amount, currency, name, cat, account, date, note,
     recurring: state.recurringOn,
     createdAt: new Date().toISOString()
@@ -1210,12 +1385,27 @@ function addTransaction() {
   haptic('medium');
 }
 
-function deleteCurrentTx() {
+// Удаление с возможностью вернуть: восстанавливаем на прежнюю позицию списка.
+function deleteTxById(id) {
+  const idx = state.transactions.findIndex(t => t.id === id);
+  if (idx < 0) return;
+  const removed = state.transactions[idx];
+  state.transactions.splice(idx, 1);
+  save(); refreshAll();
+  haptic('heavy');
+  showUndoToast('🗑️ Удалено: ' + removed.name, () => {
+    state.transactions.splice(idx, 0, removed);
+    save(); refreshAll();
+    showToast('↩️ Восстановлено');
+  });
+}
+
+async function deleteCurrentTx() {
   if (!state.editingTxId) return;
-  if (!confirm('Удалить операцию?')) return;
-  state.transactions = state.transactions.filter(t => t.id !== state.editingTxId);
-  save(); closeModal('add-modal'); refreshAll();
-  haptic('heavy'); showToast('🗑️ Операция удалена');
+  if (!await uiConfirm('Удалить операцию?', { okLabel: 'Удалить', danger: true })) return;
+  const id = state.editingTxId;
+  closeModal('add-modal');
+  deleteTxById(id);
 }
 
 function getCatLabel(id, type) {
@@ -1238,22 +1428,40 @@ function getCatBg(id) {
 // ---- RENDER HOME ----
 function renderHome() {
   const txs = state.transactions;
-  let rubBal = 0, usdBal = 0, totalIncome = 0, totalExpense = 0;
+  let rubBal = 0, usdBal = 0, totalIncome = 0, totalExpense = 0, plannedCount = 0, plannedSum = 0;
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  // Сравниваем ISO-строки: дешевле, чем создавать Date на каждую операцию,
+  // и не зависит от часового пояса.
+  const monthStartStr = isoDate(monthStart);
+  const todayStr = isoDate(now);
 
   txs.forEach(tx => {
     if (tx.type === 'transfer') return;
+    // Будущие операции в текущий баланс не входят — иначе запланированный
+    // на следующую неделю платёж уже уменьшал остаток.
+    if (tx.date > todayStr) {
+      plannedCount++;
+      plannedSum += toRub(tx.amount, tx.currency) * (tx.type === 'income' ? 1 : -1);
+      return;
+    }
     const sign = tx.type === 'income' ? 1 : -1;
     if (tx.currency === 'USD') usdBal += sign * tx.amount;
     else rubBal += sign * tx.amount;
-    const d = new Date(tx.date);
-    if (d >= monthStart) {
+    if (tx.date >= monthStartStr) {
       const rub = toRub(tx.amount, tx.currency);
       if (tx.type === 'income') totalIncome += rub;
       else totalExpense += rub;
     }
   });
+
+  const plannedEl = document.getElementById('planned-note');
+  if (plannedCount) {
+    plannedEl.style.display = '';
+    plannedEl.innerHTML = `📅 Запланировано: ${plannedCount} ${plural(plannedCount, 'операция', 'операции', 'операций')} на ${plannedSum >= 0 ? '+' : ''}${fmtRub(plannedSum)}`;
+  } else {
+    plannedEl.style.display = 'none';
+  }
 
   const totalRub = rubBal + usdBal * state.usdRate;
   document.getElementById('total-rub').textContent = fmtRub(totalRub);
@@ -1365,8 +1573,10 @@ function renderTxItem(tx, showSwipe=false) {
   const secondary = tx.currency === 'USD' ? `≈ ${fmtRub(rubVal)}` : '';
   const dateStr = new Date(tx.date).toLocaleDateString('ru-RU', {day:'numeric',month:'short'});
   const recurBadge = tx.recurring ? '<span class="recurring-badge">🔁</span>' : '';
-  return `<div class="tx-item" ontouchstart="txTouchStart(event,${tx.id})" ontouchmove="txTouchMove(event,${tx.id})" ontouchend="txTouchEnd(event,${tx.id})" onclick="txClick(${tx.id})" id="txitem-${tx.id}">
-    <div class="tx-content" id="txcontent-${tx.id}">
+  const a = attrArg(tx.id);
+  const idAttr = esc(String(tx.id));
+  return `<div class="tx-item" ontouchstart="txTouchStart(event,${a})" ontouchmove="txTouchMove(event,${a})" ontouchend="txTouchEnd(event,${a})" onclick="txClick(${a})" id="txitem-${idAttr}">
+    <div class="tx-content" id="txcontent-${idAttr}">
       <div class="tx-icon" style="background:${bg}22">${icon}</div>
       <div class="tx-info">
         <div class="tx-name">${esc(tx.name)}${recurBadge}</div>
@@ -1377,7 +1587,7 @@ function renderTxItem(tx, showSwipe=false) {
         ${secondary ? `<div class="tx-secondary">${secondary}</div>` : ''}
       </div>
     </div>
-    <div class="tx-swipe-bg" id="txswipe-${tx.id}">🗑️</div>
+    <div class="tx-swipe-bg" id="txswipe-${idAttr}">🗑️</div>
   </div>`;
 }
 
@@ -1410,19 +1620,13 @@ function txTouchEnd(e, id) {
   if (!swipeState[id]) return;
   const dx = swipeState[id].dx || 0;
   if (dx > 10) swipeBlockUntil = Date.now() + 400; // подавляем click после свайпа
+  delete swipeState[id];
   if (dx > 60) {
-    // delete
-    if (confirm('Удалить операцию?')) {
-      state.transactions = state.transactions.filter(t => t.id !== id);
-      save(); refreshAll();
-      haptic('heavy'); showToast('🗑️ Удалено');
-    } else {
-      resetSwipe(id);
-    }
+    // Свайп до конца удаляет сразу — подтверждение заменяет кнопка «Отменить» в тосте.
+    deleteTxById(id);
   } else {
     resetSwipe(id);
   }
-  delete swipeState[id];
 }
 function resetSwipe(id) {
   const content = document.getElementById('txcontent-'+id);
@@ -1521,13 +1725,14 @@ function buildFilterChips() {
   chips.innerHTML = `<button class="filter-chip ${!state.filterCat?'active':''}" onclick="setFilterCat(null)">Все</button>` +
     allCats.map(id => {
       const cat = [...CATEGORIES.expense, ...CATEGORIES.income].find(c => c.id === id);
-      return `<button class="filter-chip ${state.filterCat===id?'active':''}" onclick="setFilterCat('${id}')">${cat?.icon||'📦'} ${cat?.label||id}</button>`;
+      return `<button class="filter-chip ${state.filterCat===id?'active':''}" onclick="setFilterCat(${attrArg(id)})">${cat?.icon||'📦'} ${esc(cat?.label||id)}</button>`;
     }).join('');
 }
-function setFilterCat(cat) { state.filterCat = cat; buildFilterChips(); renderHistory(); haptic(); }
+function setFilterCat(cat) { state.filterCat = cat; resetHistoryLimit(); buildFilterChips(); renderHistory(); haptic(); }
 
 function setPeriod(p, btn) {
   state.historyPeriod = p;
+  resetHistoryLimit();
   // Только классы — инлайн-цвета ломали светлую тему.
   document.querySelectorAll('#history-period .period-tab').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
@@ -1538,7 +1743,7 @@ function renderHistory() {
   const now = new Date();
   let filtered = state.transactions;
   if (state.historyPeriod === 'day') {
-    const today = now.toISOString().split('T')[0];
+    const today = isoDate(now);
     filtered = filtered.filter(tx => tx.date === today);
   } else if (state.historyPeriod === 'week') {
     const weekAgo = new Date(now - 7*86400000);
@@ -1557,9 +1762,15 @@ function renderHistory() {
     return;
   }
 
+  // Рендерим порциями: на 3000 операций разом уходило ~260 мс и 30 тыс. узлов,
+  // на телефоне это заметное подвисание и рваная прокрутка.
+  const total = filtered.length;
+  const shown = Math.min(historyLimit, total);
+  const visible = filtered.slice(0, shown);
+
   // group by date
   const byDate = {};
-  filtered.forEach(tx => {
+  visible.forEach(tx => {
     if (!byDate[tx.date]) byDate[tx.date] = [];
     byDate[tx.date].push(tx);
   });
@@ -1578,6 +1789,21 @@ function renderHistory() {
       </div>
       <div class="tx-list-wrap">${dayTxs.map(tx => renderTxItem(tx)).join('')}</div>`;
   }).join('<div style="height:12px"></div>');
+
+  if (shown < total) {
+    el.innerHTML += `<button class="export-btn" style="margin-top:14px" onclick="showMoreHistory()">
+      Показать ещё (осталось ${total - shown})
+    </button>`;
+  }
+}
+
+// Сброс порции при смене фильтра/периода/поиска, иначе после сужения выборки
+// оставался лимит от предыдущего просмотра.
+function resetHistoryLimit() { historyLimit = HISTORY_PAGE; }
+function showMoreHistory() {
+  historyLimit += HISTORY_PAGE;
+  renderHistory();
+  haptic();
 }
 
 // ---- STATS ----
@@ -1663,20 +1889,29 @@ function chartColors() {
 
 function renderBarChart(txs) {
   destroyChart('bar');
+  // Группируем по полной дате (YYYY-MM-DD): раньше ключом было «месяц/день»,
+  // и 5 июля разных лет схлопывались в один столбец. Сортируем по дате,
+  // а не по порядку добавления — иначе «последние 14» брались произвольно.
   const grouped = {};
   txs.forEach(tx => {
     if (tx.type === 'transfer') return;
-    const d = new Date(tx.date);
-    const key = `${d.getMonth()+1}/${d.getDate()}`;
-    if (!grouped[key]) grouped[key] = {income:0,expense:0};
-    grouped[key][tx.type] += toRub(tx.amount, tx.currency);
+    if (!grouped[tx.date]) grouped[tx.date] = {income:0,expense:0};
+    grouped[tx.date][tx.type] += toRub(tx.amount, tx.currency);
   });
-  const keys = Object.keys(grouped).slice(-14);
+  const keys = Object.keys(grouped).sort().slice(-14);
   if (!keys.length) return;
+  // Если период охватывает несколько лет, добавляем год — иначе «7/5» из
+  // разных лет читаются как один и тот же день.
+  const multiYear = new Set(keys.map(k => k.slice(0, 4))).size > 1;
+  const labels = keys.map(k => {
+    const d = new Date(k);
+    const base = (d.getMonth()+1) + '/' + d.getDate();
+    return multiYear ? base + '/' + k.slice(2, 4) : base;
+  });
   const cc = chartColors();
   charts.bar = new Chart(document.getElementById('bar-chart'), {
     type: 'bar',
-    data: { labels: keys, datasets: [
+    data: { labels, datasets: [
       { label:'Доходы', data: keys.map(k=>Math.round(grouped[k].income)), backgroundColor:'rgba(46,204,138,0.7)', borderRadius:4 },
       { label:'Расходы', data: keys.map(k=>Math.round(grouped[k].expense)), backgroundColor:'rgba(255,90,90,0.7)', borderRadius:4 },
     ]},
@@ -1729,10 +1964,10 @@ function renderLineChart(txs) {
 function saveBudget() {
   const cat = document.getElementById('budget-cat').value;
   const limit = parseFloat(document.getElementById('budget-limit').value);
-  if (!limit || limit <= 0) { alert('Введи лимит'); return; }
+  if (!limit || limit <= 0) { showToast('⚠️ Введите лимит'); return; }
   const existing = state.budgets.findIndex(b => b.cat === cat);
   if (existing >= 0) state.budgets[existing].limit = limit;
-  else state.budgets.push({cat, limit, id:Date.now()});
+  else state.budgets.push({cat, limit, id: nextId()});
   save(); closeModal('budget-modal'); renderBudgets(); renderHome();
   showToast('✅ Бюджет сохранён');
 }
@@ -1757,7 +1992,7 @@ function renderBudgets() {
     return `<div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--radius-sm);padding:14px 16px;margin-bottom:10px">
       <div class="budget-header">
         <div class="budget-name" style="font-size:15px">${catInfo?.icon||''} ${catInfo?.label||b.cat}</div>
-        <button onclick="deleteBudget(${b.id})" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px">×</button>
+        <button onclick="deleteBudget(${attrArg(b.id)})" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px">×</button>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--text3);margin:6px 0">
         <span>Потрачено: <span style="color:${color};font-weight:600">${fmtRub(s)}</span></span>
@@ -1785,13 +2020,13 @@ function saveGoal() {
   const name = document.getElementById('goal-name').value.trim();
   const target = parseFloat(document.getElementById('goal-target').value);
   const current = parseFloat(document.getElementById('goal-current').value) || 0;
-  if (!name || !target || target <= 0) { alert('Заполни название и сумму'); return; }
+  if (!name || !target || target <= 0) { showToast('⚠️ Заполните название и сумму'); return; }
   const editId = document.getElementById('goal-edit-id').value;
   if (editId) {
     const idx = state.goals.findIndex(g => g.id == editId);
     if (idx >= 0) state.goals[idx] = {...state.goals[idx], name, target, current, icon: state.selectedGoalIcon};
   } else {
-    state.goals.push({id: Date.now(), name, target, current, icon: state.selectedGoalIcon, createdAt: new Date().toISOString()});
+    state.goals.push({id: nextId(), name, target, current, icon: state.selectedGoalIcon, createdAt: new Date().toISOString()});
   }
   save(); closeModal('goal-modal'); renderGoals();
   showToast('✅ Цель сохранена');
@@ -1800,16 +2035,34 @@ function saveGoal() {
 function addToGoal() {
   const id = parseInt(document.getElementById('goal-add-id').value);
   const amount = parseFloat(document.getElementById('goal-add-amount').value);
-  if (!amount || amount <= 0) { alert('Введи сумму'); return; }
+  if (!amount || amount <= 0) { showToast('⚠️ Введите сумму'); return; }
   const idx = state.goals.findIndex(g => g.id === id);
   if (idx < 0) return;
-  state.goals[idx].current = Math.min(state.goals[idx].target, state.goals[idx].current + amount);
-  save(); closeModal('goal-add-modal'); renderGoals();
-  haptic('medium'); showToast('✅ Пополнено!');
+  const goal = state.goals[idx];
+  goal.current = Math.min(goal.target, goal.current + amount);
+
+  // Раньше счётчик цели рос сам по себе, а деньги на счетах не двигались —
+  // выходило, что накопления берутся из ниоткуда. Теперь это обычный перевод
+  // на счёт «Копилка»: общий баланс не меняется, отложенное видно отдельно.
+  const from = document.getElementById('goal-add-account').value;
+  if (from !== 'none') {
+    state.transactions.unshift({
+      id: nextId(), type: 'transfer', amount, currency: 'RUB',
+      name: `Пополнение цели: ${goal.icon} ${goal.name}`,
+      cat: 'transfer', account: from, toAccount: 'savings',
+      date: isoDate(new Date()), note: '',
+      goalId: goal.id,
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  save(); closeModal('goal-add-modal'); renderGoals(); renderHome();
+  haptic('medium');
+  showToast(from === 'none' ? '✅ Пополнено!' : '✅ Переложено в копилку');
 }
 
-function deleteGoal(id) {
-  if (!confirm('Удалить цель?')) return;
+async function deleteGoal(id) {
+  if (!await uiConfirm('Удалить цель?', { okLabel: 'Удалить', danger: true })) return;
   state.goals = state.goals.filter(g => g.id !== id);
   save(); renderGoals(); showToast('🗑️ Цель удалена');
 }
@@ -1832,9 +2085,9 @@ function renderGoals() {
       <div class="goal-track"><div class="goal-fill" style="width:${pct}%;background:${done?'var(--green)':'var(--blue)'}"></div></div>
       <div class="goal-pct"><span>${pct}%</span><span>${done?'Цель достигнута!':'Осталось '+fmtRub(left)}</span></div>
       <div class="goal-actions">
-        ${!done?`<button class="goal-btn primary" onclick="openGoalAddModal(${g.id})">+ Пополнить</button>`:''}
-        <button class="goal-btn" onclick="openGoalModal(${g.id})">✏️ Изменить</button>
-        <button class="goal-btn" style="color:var(--red)" onclick="deleteGoal(${g.id})">🗑️</button>
+        ${!done?`<button class="goal-btn primary" onclick="openGoalAddModal(${attrArg(g.id)})">+ Пополнить</button>`:''}
+        <button class="goal-btn" onclick="openGoalModal(${attrArg(g.id)})">✏️ Изменить</button>
+        <button class="goal-btn" style="color:var(--red)" onclick="deleteGoal(${attrArg(g.id)})">🗑️</button>
       </div>
     </div>`;
   }).join('');
@@ -1843,11 +2096,11 @@ function renderGoals() {
 // ---- RATE (CBR) ----
 // rateManual: курс введён вручную — автозагрузка ЦБ его больше не затирает
 // (раньше rateUpdatedAt = null приводил к fetchRate() при каждом старте).
-function editRate() {
-  const r = prompt('Курс USD в рублях:', state.usdRate);
-  if (r && !isNaN(r)) {
+async function editRate() {
+  const r = await uiPrompt('Курс USD в рублях:', state.usdRate, { title: '💱 Курс валюты', input: 'number' });
+  if (r && !isNaN(r) && parseFloat(r) > 0) {
     state.usdRate = parseFloat(r); state.rateUpdatedAt = null; state.rateManual = true;
-    save(); refreshAll();
+    save(); refreshAll(); showToast('💾 Курс сохранён: 1$ = ' + state.usdRate + ' ₽');
   }
 }
 function saveRate() {
@@ -2241,7 +2494,7 @@ function parseVoice(raw) {
   // Дата ("позавчера" проверяем раньше, оно содержит "вчера")
   let dateToken = null;
   const today = new Date();
-  const shift = d => { const x = new Date(today); x.setDate(x.getDate() - d); return x.toISOString().split('T')[0]; };
+  const shift = d => { const x = new Date(today); x.setDate(x.getDate() - d); return isoDate(x); };
   if (/позавчера/.test(text)) res.date = shift(2);
   else if (/вчера/.test(text)) res.date = shift(1);
   else if (/сегодня/.test(text)) res.date = shift(0);
@@ -2489,7 +2742,7 @@ function openVoiceBatchModal(list) {
 
 function renderVoiceBatch() {
   document.getElementById('vb-count').textContent = voiceBatch.length;
-  const today = new Date().toISOString().split('T')[0];
+  const today = isoDate(new Date());
   document.getElementById('vb-list').innerHTML = voiceBatch.map((p, i) => {
     const cat = (p.type === 'income' ? CATEGORIES.income : CATEGORIES.expense).find(c => c.id === p.cat);
     const acc = ACCOUNTS.find(a => a.id === p.account);
@@ -2519,13 +2772,12 @@ function removeVoiceBatchItem(i) {
 }
 
 function commitVoiceBatch() {
-  const today = new Date().toISOString().split('T')[0];
-  let idSeq = Date.now();
+  const today = isoDate(new Date());
   voiceBatch.forEach(p => {
     const cats = p.type === 'income' ? CATEGORIES.income : CATEGORIES.expense;
     const cat = cats.find(c => c.id === p.cat);
     state.transactions.unshift({
-      id: ++idSeq,
+      id: nextId(),
       type: p.type,
       amount: p.amount,
       currency: p.currency,
@@ -2623,8 +2875,15 @@ function exportCSV() {
       tx.note||''
     ]);
   });
+  // \u042F\u0447\u0435\u0439\u043A\u0430, \u043D\u0430\u0447\u0438\u043D\u0430\u044E\u0449\u0430\u044F\u0441\u044F \u0441 = + - @, \u0432\u044B\u043F\u043E\u043B\u043D\u044F\u0435\u0442\u0441\u044F Excel \u043A\u0430\u043A \u0444\u043E\u0440\u043C\u0443\u043B\u0430.
+  // \u041D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u043E\u043F\u0435\u0440\u0430\u0446\u0438\u0438 \u043F\u0438\u0448\u0435\u0442 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044C, \u043D\u043E \u0432 \u0444\u0430\u0439\u043B \u043C\u043E\u0433\u043B\u0438 \u043F\u043E\u043F\u0430\u0441\u0442\u044C \u0438 \u0447\u0443\u0436\u0438\u0435 \u0434\u0430\u043D\u043D\u044B\u0435.
+  const cell = v => {
+    let s = String(v);
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+    return '"' + s.replace(/"/g, '""') + '"';
+  };
   // BOM + semicolon separator for correct Excel/Numbers opening with Cyrillic
-  const csv = '\uFEFF' + rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(';')).join('\r\n');
+  const csv = '\uFEFF' + rows.map(r => r.map(cell).join(';')).join('\r\n');
   downloadFile(csv, 'finance.csv', 'text/csv;charset=utf-8');
   showToast('📊 CSV экспортирован');
 }
@@ -2632,24 +2891,115 @@ function exportJSON() {
   downloadFile(JSON.stringify(state, null, 2), 'finance-backup.json', 'application/json');
   showToast('📋 Резервная копия создана');
 }
+// Импорт — единственный путь, которым в приложение попадают чужие данные.
+// Всё приводим к ожидаемым типам: id только число, категория и счёт — только
+// из известных списков. Иначе строка вроде "food'); alert(1); //" попадала
+// в обработчик onclick и выполнялась как код.
+const KNOWN_CATS = new Set([
+  ...CATEGORIES.expense.map(c => c.id),
+  ...CATEGORIES.income.map(c => c.id),
+  'transfer',
+]);
+const KNOWN_ACCOUNTS = new Set(ACCOUNTS.map(a => a.id));
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function sanitizeTx(t, i) {
+  if (!t || typeof t !== 'object') return null;
+  const amount = Number(t.amount);
+  if (!isFinite(amount) || amount <= 0) return null;
+  if (typeof t.date !== 'string' || !ISO_DATE.test(t.date)) return null;
+  const type = ['income', 'expense', 'transfer'].includes(t.type) ? t.type : 'expense';
+  return {
+    id: Number(t.id) || Date.now() + i,
+    type,
+    amount,
+    currency: t.currency === 'USD' ? 'USD' : 'RUB',
+    name: String(t.name || 'Операция').slice(0, 200),
+    cat: KNOWN_CATS.has(t.cat) ? t.cat : (type === 'income' ? 'other' : 'other'),
+    account: KNOWN_ACCOUNTS.has(t.account) ? t.account : 'card',
+    toAccount: KNOWN_ACCOUNTS.has(t.toAccount) ? t.toAccount : undefined,
+    date: t.date,
+    note: String(t.note || '').slice(0, 500),
+    recurring: !!t.recurring,
+    recurringSource: Number(t.recurringSource) || undefined,
+    createdAt: typeof t.createdAt === 'string' ? t.createdAt : new Date().toISOString(),
+  };
+}
+
+function sanitizeGoal(g, i) {
+  if (!g || typeof g !== 'object') return null;
+  const target = Number(g.target);
+  if (!isFinite(target) || target <= 0) return null;
+  return {
+    id: Number(g.id) || Date.now() + i,
+    name: String(g.name || 'Цель').slice(0, 100),
+    target,
+    current: Math.max(0, Number(g.current) || 0),
+    icon: GOAL_ICONS.includes(g.icon) ? g.icon : '🎯',
+    createdAt: typeof g.createdAt === 'string' ? g.createdAt : new Date().toISOString(),
+  };
+}
+
+function sanitizeBudget(b, i) {
+  if (!b || typeof b !== 'object') return null;
+  const limit = Number(b.limit);
+  if (!isFinite(limit) || limit <= 0) return null;
+  if (!KNOWN_CATS.has(b.cat)) return null;
+  return { id: Number(b.id) || Date.now() + i, cat: b.cat, limit };
+}
+
+function sanitizeDebt(d, i) {
+  if (!d || typeof d !== 'object') return null;
+  const amount = Number(d.amount);
+  if (!isFinite(amount) || amount <= 0) return null;
+  return {
+    id: Number(d.id) || Date.now() + i,
+    type: d.type === 'owed' ? 'owed' : 'owe',
+    person: String(d.person || '—').slice(0, 100),
+    amount,
+    reason: String(d.reason || '').slice(0, 200),
+    closed: !!d.closed,
+    date: typeof d.date === 'string' && ISO_DATE.test(d.date) ? d.date : isoDate(new Date()),
+    createdAt: typeof d.createdAt === 'string' ? d.createdAt : new Date().toISOString(),
+  };
+}
+
 function importJSON(input) {
   const file = input.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = e => {
+  reader.onload = async e => {
     try {
       const data = JSON.parse(e.target.result);
       if (!Array.isArray(data.transactions)) throw new Error('invalid');
-      // Отбрасываем записи без суммы — битый файл не должен ломать подсчёты.
-      data.transactions = data.transactions.filter(t => t && typeof t.amount === 'number' && t.date);
-      if (!confirm(`Импортировать ${data.transactions.length} операций? Текущие данные будут заменены.`)) return;
-      Object.assign(state, data);
-      state.goals = Array.isArray(state.goals) ? state.goals : [];
-      state.budgets = Array.isArray(state.budgets) ? state.budgets : [];
-      state.debts = Array.isArray(state.debts) ? state.debts : [];
-      save(); refreshAll();
+
+      const txs = data.transactions.map(sanitizeTx).filter(Boolean);
+      const skipped = data.transactions.length - txs.length;
+      const ok = await uiConfirm(
+        `Импортировать ${txs.length} операций?` +
+        (skipped ? ` ${skipped} записей повреждены и будут пропущены.` : '') +
+        ' Текущие данные будут заменены.',
+        { title: '📂 Восстановление', okLabel: 'Импортировать' }
+      );
+      if (!ok) return;
+
+      state.transactions = txs;
+      state.goals = (Array.isArray(data.goals) ? data.goals : []).map(sanitizeGoal).filter(Boolean);
+      state.budgets = (Array.isArray(data.budgets) ? data.budgets : []).map(sanitizeBudget).filter(Boolean);
+      state.debts = (Array.isArray(data.debts) ? data.debts : []).map(sanitizeDebt).filter(Boolean);
+      const rate = Number(data.usdRate);
+      if (isFinite(rate) && rate > 0) state.usdRate = rate;
+      state.darkMode = data.darkMode !== undefined ? !!data.darkMode : state.darkMode;
+      state.filterCat = null;
+
+      save();
+      renderHome(); buildFilterChips(); renderHistory();
+      renderStats(); renderBudgets(); renderGoals(); renderDebts();
+      applyTheme();
       showToast('✅ Данные восстановлены');
-    } catch(err) { alert('Ошибка импорта. Проверь файл.'); }
+    } catch (err) {
+      uiAlert('Не удалось прочитать файл. Убедитесь, что это резервная копия из этого приложения.', '❌ Ошибка импорта');
+    }
   };
   reader.readAsText(file);
   input.value = '';
@@ -2659,8 +3009,10 @@ function downloadFile(content, filename, type) {
   a.href = URL.createObjectURL(new Blob([content],{type}));
   a.download = filename; a.click();
 }
-function clearAll() {
-  if (confirm('Удалить все данные? Это нельзя отменить.')) {
+async function clearAll() {
+  const ok = await uiConfirm('Удалить все данные? Это нельзя отменить. Сначала лучше сделать резервную копию.',
+    { title: '🗑️ Удаление данных', okLabel: 'Удалить всё', danger: true });
+  if (ok) {
     state.transactions = []; state.budgets = []; state.goals = []; state.debts = [];
     state.filterCat = null;
     save();
@@ -2686,14 +3038,18 @@ function applyRecurring() {
     t.date && t.date.startsWith(thisMonth) && t.recurringSource
   ).map(t => t.recurringSource);
 
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+
   let added = 0;
-  let idSeq = Date.now();
   recurring.forEach(tx => {
     if (alreadyThisMonth.includes(tx.id)) return;
+    // День берём из исходной операции, а не сегодняшний: зарплата 5-го числа
+    // при заходе в приложение 20-го записывалась двадцатым.
+    const origDay = Math.min(parseInt(String(tx.date).slice(8, 10), 10) || 1, daysInMonth);
     state.transactions.unshift({
       ...tx,
-      id: ++idSeq,   // целочисленный id: дробный ломал сравнения и разметку
-      date: `${thisMonth}-${String(now.getDate()).padStart(2,'0')}`,
+      id: nextId(),   // целочисленный id: дробный ломал сравнения и разметку
+      date: `${thisMonth}-${String(origDay).padStart(2, '0')}`,
       createdAt: new Date().toISOString(),
       recurringSource: tx.id,
       recurring: false,
@@ -2718,12 +3074,34 @@ function setDebtType(type) {
   debtType = type;
   document.getElementById('debt-seg-owe').className = 'seg-btn' + (type==='owe'?' active-expense':'');
   document.getElementById('debt-seg-owed').className = 'seg-btn' + (type==='owed'?' active-income':'');
+  updateDebtMoneyHint();
   haptic();
+}
+
+let debtMoneyMoved = false;
+
+function toggleDebtMoney() {
+  debtMoneyMoved = !debtMoneyMoved;
+  document.getElementById('debt-money-toggle').classList.toggle('on', debtMoneyMoved);
+  document.getElementById('debt-account-row').style.display = debtMoneyMoved ? '' : 'none';
+  updateDebtMoneyHint();
+  haptic();
+}
+
+function updateDebtMoneyHint() {
+  const hint = document.getElementById('debt-money-hint');
+  if (!debtMoneyMoved) { hint.textContent = 'Записать операцию и изменить баланс'; return; }
+  hint.textContent = debtType === 'owe'
+    ? 'Мне дали в долг → баланс вырастет'
+    : 'Я дал в долг → баланс уменьшится';
 }
 
 function openDebtModal() {
   debtType = 'owe';
+  debtMoneyMoved = false;
   setDebtType('owe');
+  document.getElementById('debt-money-toggle').classList.remove('on');
+  document.getElementById('debt-account-row').style.display = 'none';
   document.getElementById('debt-person').value = '';
   document.getElementById('debt-amount').value = '';
   document.getElementById('debt-reason').value = '';
@@ -2734,31 +3112,82 @@ function saveDebt() {
   const person = document.getElementById('debt-person').value.trim();
   const amount = parseFloat(document.getElementById('debt-amount').value);
   const reason = document.getElementById('debt-reason').value.trim();
-  if (!person) { alert('Введи имя'); return; }
-  if (!amount || amount <= 0) { alert('Введи сумму'); return; }
+  if (!person) { showToast('⚠️ Введите имя'); return; }
+  if (!amount || amount <= 0) { showToast('⚠️ Введите сумму'); return; }
   if (!state.debts) state.debts = [];
+
+  const debtId = nextId();
+  let txId = null;
+
+  // Раньше долг был просто заметкой и никак не влиял на деньги. Теперь, если
+  // деньги действительно перешли из рук в руки, создаём операцию:
+  // взял в долг — приход, дал в долг — расход.
+  if (debtMoneyMoved) {
+    const account = document.getElementById('debt-account').value;
+    txId = nextId();
+    state.transactions.unshift({
+      id: txId,
+      type: debtType === 'owe' ? 'income' : 'expense',
+      amount, currency: 'RUB',
+      name: debtType === 'owe' ? `Занял у: ${person}` : `Дал в долг: ${person}`,
+      cat: debtType === 'owe' ? 'other' : 'other',
+      account, date: isoDate(new Date()), note: reason,
+      debtId,
+      createdAt: new Date().toISOString(),
+    });
+  }
+
   state.debts.unshift({
-    id: Date.now(), type: debtType,
+    id: debtId, type: debtType,
     person, amount, reason,
-    closed: false, date: new Date().toISOString().split('T')[0],
+    closed: false, date: isoDate(new Date()),
+    txId,
     createdAt: new Date().toISOString()
   });
-  save(); closeModal('debt-modal'); renderDebts();
-  haptic('medium'); showToast('✅ Долг добавлен');
+  save(); closeModal('debt-modal'); renderDebts(); renderHome();
+  haptic('medium');
+  showToast(debtMoneyMoved ? '✅ Долг записан, баланс обновлён' : '✅ Долг добавлен');
 }
 
-function closeDebt(id) {
-  if (!confirm('Отметить долг как возвращённый?')) return;
+async function closeDebt(id) {
   const idx = state.debts.findIndex(d => d.id == id);
-  if (idx >= 0) state.debts[idx].closed = true;
-  save(); renderDebts();
-  haptic('medium'); showToast('✅ Долг закрыт');
+  if (idx < 0) return;
+  const debt = state.debts[idx];
+
+  // Если при создании деньги двигались, при возврате они двигаются обратно.
+  const willMove = !!debt.txId;
+  const text = willMove
+    ? (debt.type === 'owe'
+        ? `Вы возвращаете ${fmtRub(debt.amount)} — запишем расход.`
+        : `Вам вернули ${fmtRub(debt.amount)} — запишем доход.`)
+    : 'Отметить долг как возвращённый?';
+  if (!await uiConfirm(text, { okLabel: 'Закрыть долг' })) return;
+
+  debt.closed = true;
+  if (willMove) {
+    const src = state.transactions.find(t => t.id === debt.txId);
+    state.transactions.unshift({
+      id: nextId(),
+      type: debt.type === 'owe' ? 'expense' : 'income',
+      amount: debt.amount, currency: 'RUB',
+      name: debt.type === 'owe' ? `Вернул долг: ${debt.person}` : `Долг вернули: ${debt.person}`,
+      cat: 'other',
+      account: (src && src.account) || 'card',
+      date: isoDate(new Date()), note: debt.reason || '',
+      debtId: debt.id,
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  save(); renderDebts(); renderHome();
+  haptic('medium');
+  showToast(willMove ? '✅ Долг закрыт, баланс обновлён' : '✅ Долг закрыт');
 }
 
-function deleteDebt(id) {
-  if (!confirm('Удалить долг?')) return;
+async function deleteDebt(id) {
+  if (!await uiConfirm('Удалить долг?', { okLabel: 'Удалить', danger: true })) return;
   state.debts = state.debts.filter(d => d.id != id);
-  save(); renderDebts();
+  save(); renderDebts(); renderHome();
   showToast('🗑️ Удалено');
 }
 
@@ -2785,9 +3214,9 @@ function renderDebts() {
       ${d.reason?`<div class="debt-reason">📝 ${esc(d.reason)}</div>`:''}
       <div class="debt-reason">📅 ${new Date(d.date).toLocaleDateString('ru-RU',{day:'numeric',month:'short',year:'numeric'})}</div>
       ${showClose ? `<div class="debt-actions">
-        <button class="debt-btn close" onclick="closeDebt(${d.id})">✅ Закрыть</button>
-        <button class="debt-btn" style="color:var(--red)" onclick="deleteDebt(${d.id})">🗑️</button>
-      </div>` : `<div class="debt-actions"><div style="font-size:11px;color:var(--green);">✅ Закрыт</div><button class="debt-btn" style="color:var(--red)" onclick="deleteDebt(${d.id})">🗑️</button></div>`}
+        <button class="debt-btn close" onclick="closeDebt(${attrArg(d.id)})">✅ Закрыть</button>
+        <button class="debt-btn" style="color:var(--red)" onclick="deleteDebt(${attrArg(d.id)})">🗑️</button>
+      </div>` : `<div class="debt-actions"><div style="font-size:11px;color:var(--green);">✅ Закрыт</div><button class="debt-btn" style="color:var(--red)" onclick="deleteDebt(${attrArg(d.id)})">🗑️</button></div>`}
     </div>`;
 
   const listEl = document.getElementById('debts-list');
