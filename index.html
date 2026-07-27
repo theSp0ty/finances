@@ -307,7 +307,10 @@ select.form-input option { background: #1c1c26; }
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(167,139,250,0.5); } 70% { box-shadow: 0 0 0 28px rgba(167,139,250,0); } 100% { box-shadow: 0 0 0 0 rgba(167,139,250,0); } }
 .voice-text { color: #f0f0f8; font-size: 18px; font-weight: 500; min-height: 50px; max-width: 320px; line-height: 1.4; }
 .voice-hint { color: #9090a8; font-size: 13px; max-width: 300px; line-height: 1.5; }
+.voice-actions { display: flex; gap: 10px; align-items: center; }
 .voice-cancel { padding: 12px 28px; border-radius: 24px; background: rgba(255,255,255,0.1); border: 0.5px solid rgba(255,255,255,0.2); color: #f0f0f8; font-size: 15px; font-family: var(--font); cursor: pointer; }
+.voice-done { padding: 12px 36px; border-radius: 24px; background: var(--purple); border: none; color: #ffffff; font-size: 15px; font-weight: 600; font-family: var(--font); cursor: pointer; box-shadow: 0 4px 16px rgba(167,139,250,0.4); }
+.voice-done:active { transform: scale(0.96); }
 .voice-chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; max-width: 340px; }
 .voice-chip { font-size: 12px; color: #9090a8; background: rgba(255,255,255,0.07); border-radius: 20px; padding: 5px 12px; }
 
@@ -452,7 +455,10 @@ select.form-input option { background: #1c1c26; }
   <div class="section" style="padding:0 20px">
     <div class="month-compare" id="month-compare"></div>
   </div>
-  <div class="section">
+  <div class="section" id="stats-empty" style="display:none">
+    <div class="empty"><div class="empty-icon">📊</div><div class="empty-text">Нет данных за этот период</div></div>
+  </div>
+  <div class="section" id="stats-charts">
     <div class="chart-card">
       <div class="chart-card-title">Доходы vs расходы</div>
       <div class="chart-wrap" style="height:180px"><canvas id="bar-chart" role="img" aria-label="Сравнение доходов и расходов">Данных пока нет.</canvas></div>
@@ -639,9 +645,25 @@ select.form-input option { background: #1c1c26; }
     <span class="voice-chip">такси 400</span>
     <span class="voice-chip">продукты 1500 наличными</span>
     <span class="voice-chip">зарплата 90000 доход</span>
-    <span class="voice-chip">обед 350 вчера</span>
+    <span class="voice-chip">кофе 250 картой, такси 400 наличными</span>
   </div>
-  <button class="voice-cancel" onclick="stopVoice()">Отмена</button>
+  <div class="voice-actions">
+    <button class="voice-cancel" onclick="stopVoice()">Отмена</button>
+    <button class="voice-done" onclick="finishVoice()">Готово</button>
+  </div>
+</div>
+
+<!-- VOICE BATCH MODAL -->
+<div class="modal-bg" id="voice-batch-modal" onclick="closeModal('voice-batch-modal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div class="modal-title">🎤 Распознано операций: <span id="vb-count"></span></div>
+    <div class="tx-list-wrap" id="vb-list"></div>
+    <div style="display:flex;gap:10px;margin-top:16px">
+      <button class="submit-btn" style="background:var(--bg3);color:var(--text2)" onclick="closeModal('voice-batch-modal')">Отмена</button>
+      <button class="submit-btn" onclick="commitVoiceBatch()">Добавить все</button>
+    </div>
+  </div>
 </div>
 
 <!-- ADD/EDIT TRANSACTION MODAL -->
@@ -1578,6 +1600,17 @@ async function renderStats() {
   }
   renderMonthCompare();
 
+  // Пустой период (в том числе после удаления всех данных) — гасим графики,
+  // иначе на экране оставались старые холсты и легенда категорий.
+  const hasData = txs.some(t => t.type !== 'transfer');
+  document.getElementById('stats-charts').style.display = hasData ? '' : 'none';
+  document.getElementById('stats-empty').style.display = hasData ? 'none' : '';
+  if (!hasData) {
+    destroyChart('bar'); destroyChart('donut'); destroyChart('line');
+    document.getElementById('donut-legend').innerHTML = '';
+    return;
+  }
+
   // Chart.js подтягивается только при первом открытии статистики.
   try {
     await loadScript(CHART_JS);
@@ -1655,6 +1688,7 @@ function renderBarChart(txs) {
 
 function renderDonutChart(txs) {
   destroyChart('donut');
+  document.getElementById('donut-legend').innerHTML = '';  // до раннего выхода
   const catTotals = {};
   txs.filter(tx=>tx.type==='expense').forEach(tx => {
     catTotals[tx.cat] = (catTotals[tx.cat]||0) + toRub(tx.amount, tx.currency);
@@ -2158,7 +2192,11 @@ const STOP_WORDS = new Set([
   'доход','доходы','расход','расходы','потратил','потратила','купил','купила','заплатил','заплатила',
   'получил','получила','пришло','пришла','пришёл','потрачено','добавь','запиши','добавить','записать',
   'на','за','в','и','по','с','со','из','это','было','был','примерно','около','где','то',
+  'плюс','ещё','еще','потом','также','затем','далее','а','ну',
 ]);
+
+// Слова-разделители: после суммы означают начало следующей операции.
+const SEG_SPLIT = new Set(['и','плюс','ещё','еще','потом','также','затем','далее','а','ну']);
 
 function voiceSupported() {
   return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -2195,10 +2233,10 @@ function parseVoice(raw) {
   if (/(доллар|бакс|usd)/.test(text) || text.includes('$')) res.currency = 'USD';
 
   // Счёт (шаблоны узкие, чтобы «картошка» не попала в «карту»)
-  if (/(налич|налом|кэш(?!бэк)|кеш(?!бэк))/.test(text)) res.account = 'cash';
-  else if (/(крипт|биткоин|btc|usdt)/.test(text)) res.account = 'crypto';
-  else if (/(инвест|брокер)/.test(text)) res.account = 'invest';
-  else if (/(карто[йю]|по карте|с карты|на карту|безнал)/.test(text)) res.account = 'card';
+  if (/(налич|налом|кэш(?!бэк)|кеш(?!бэк))/.test(text)) { res.account = 'cash'; res.accountExplicit = true; }
+  else if (/(крипт|биткоин|btc|usdt)/.test(text)) { res.account = 'crypto'; res.accountExplicit = true; }
+  else if (/(инвест|брокер)/.test(text)) { res.account = 'invest'; res.accountExplicit = true; }
+  else if (/(карто[йю]|по карте|с карты|на карту|безнал)/.test(text)) { res.account = 'card'; res.accountExplicit = true; }
 
   // Дата ("позавчера" проверяем раньше, оно содержит "вчера")
   let dateToken = null;
@@ -2256,78 +2294,265 @@ function parseVoice(raw) {
   return res;
 }
 
+// Разбиение фразы на отдельные операции.
+// «кофе 250 картой такси 400 наличными» → два сегмента.
+// Правило: после того как в сегменте встретилась сумма, обычное (не служебное)
+// слово или слово-разделитель начинают новую операцию.
+function splitVoiceSegments(raw) {
+  const text = String(raw).toLowerCase()
+    .replace(/[!?]/g, ' ')
+    .replace(/,(?!\d)/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+  const tokens = text.split(' ').filter(Boolean);
+  const isNumeric = t => /\d/.test(t) || NUM_WORDS[t] !== undefined || MULT_WORDS[t] !== undefined;
+
+  const segments = [];
+  let current = [];
+  let hasNumber = false;
+
+  for (const t of tokens) {
+    if (isNumeric(t)) { current.push(t); hasNumber = true; continue; }
+    if (hasNumber && SEG_SPLIT.has(t)) {
+      segments.push(current.join(' '));
+      current = []; hasNumber = false;
+      continue;
+    }
+    if (hasNumber && !STOP_WORDS.has(t) && t.length > 1) {
+      segments.push(current.join(' '));
+      current = [t]; hasNumber = false;
+      continue;
+    }
+    current.push(t);
+  }
+  if (current.length) segments.push(current.join(' '));
+  return segments.map(s => s.trim()).filter(Boolean);
+}
+
+function parseVoiceMulti(raw) {
+  const parsed = splitVoiceSegments(raw)
+    .map(s => parseVoice(s))
+    .filter(p => p && p.amount > 0);
+  if (parsed.length < 2) return parsed;
+
+  // Счёт и дату часто называют один раз на всю фразу — раздаём остальным.
+  const commonDate = (parsed.find(p => p.date) || {}).date || null;
+  const commonAcc = (parsed.find(p => p.accountExplicit) || {}).account || null;
+  parsed.forEach(p => {
+    if (!p.date && commonDate) p.date = commonDate;
+    if (!p.accountExplicit && commonAcc) p.account = commonAcc;
+  });
+  return parsed;
+}
+
 let recognition = null;
 let voiceFromFab = false;
+let voiceFinalText = '';   // подтверждённые движком куски
+let voiceLiveText = '';    // то, что видно на экране (final + промежуточный)
+let voiceCancelled = false;
+let voiceErrorMsg = '';
+let voiceTimer = null;
+
+function closeVoiceOverlay() {
+  document.getElementById('voice-overlay').classList.remove('open');
+}
 
 function startVoice(fromFab) {
   if (!state.voiceEnabled) { showToast('🎤 Голосовой ввод выключен в настройках'); return; }
   const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!Rec) { showToast('🎤 Браузер не поддерживает распознавание речи'); return; }
+  // Микрофон доступен только в защищённом контексте: https или localhost.
+  if (!window.isSecureContext) {
+    showToast('🎤 Микрофон работает только по https — откройте сайт, а не файл');
+    return;
+  }
   if (recognition) return;
 
   voiceFromFab = fromFab;
+  voiceFinalText = '';
+  voiceLiveText = '';
+  voiceCancelled = false;
+  voiceErrorMsg = '';
+
   const overlay = document.getElementById('voice-overlay');
   const textEl = document.getElementById('voice-text');
   const hintEl = document.getElementById('voice-hint');
   textEl.textContent = 'Слушаю…';
-  hintEl.textContent = 'Скажите, например: «кофе 250 рублей картой»';
+  hintEl.textContent = 'Говорите — запись остановится сама, когда замолчите';
   overlay.classList.add('open');
   haptic();
 
-  let finalText = '';
   recognition = new Rec();
   recognition.lang = 'ru-RU';
   recognition.interimResults = true;
-  recognition.continuous = false;
+  // continuous: паузы в речи не обрывают запись — останавливает пользователь.
+  recognition.continuous = true;
   recognition.maxAlternatives = 1;
+
+  // Автостоп по тишине: пока человек говорит, приходят промежуточные результаты
+  // и таймер продлевается. Замолчал — через SILENCE_MS запись завершается сама.
+  const SILENCE_MS = 1800;   // пауза после речи
+  const NO_SPEECH_MS = 8000; // ожидание, пока человек начнёт говорить
+  const armTimeout = ms => {
+    clearTimeout(voiceTimer);
+    voiceTimer = setTimeout(finishVoice, ms);
+  };
 
   recognition.onresult = e => {
     let interim = '';
     for (let i = e.resultIndex; i < e.results.length; i++) {
       const chunk = e.results[i][0].transcript;
-      if (e.results[i].isFinal) finalText += chunk;
+      if (e.results[i].isFinal) voiceFinalText += chunk + ' ';
       else interim += chunk;
     }
-    textEl.textContent = (finalText + interim).trim() || 'Слушаю…';
+    voiceLiveText = (voiceFinalText + interim).trim();
+    document.getElementById('voice-text').textContent = voiceLiveText || 'Слушаю…';
+    document.getElementById('voice-hint').textContent = 'Закончите говорить — запишу автоматически';
+    armTimeout(SILENCE_MS);
   };
 
   recognition.onerror = e => {
     const messages = {
-      'not-allowed': 'Нет доступа к микрофону — разрешите его в настройках браузера',
-      'service-not-allowed': 'Распознавание недоступно в этом браузере',
-      'no-speech': 'Ничего не услышал',
-      'network': 'Нет связи с сервисом распознавания',
+      'not-allowed': '🎤 Нет доступа к микрофону — разрешите его в настройках браузера',
+      'service-not-allowed': '🎤 Распознавание недоступно в этом браузере',
+      'no-speech': '🎤 Ничего не услышал',
+      'network': '🎤 Нет связи с сервисом распознавания',
+      'audio-capture': '🎤 Микрофон не найден',
     };
-    hintEl.textContent = messages[e.error] || ('Ошибка: ' + e.error);
-    finalText = '';
-    setTimeout(() => { if (recognition) stopVoice(); }, 1800);
+    // no-speech при continuous — не повод терять уже сказанное.
+    if (e.error === 'no-speech' && voiceLiveText) return;
+    voiceErrorMsg = messages[e.error] || ('🎤 Ошибка: ' + e.error);
   };
 
   recognition.onend = () => {
+    clearTimeout(voiceTimer);
     recognition = null;
-    const said = finalText.trim();
-    document.getElementById('voice-overlay').classList.remove('open');
+    closeVoiceOverlay();
+    if (voiceCancelled) return;
+    if (voiceErrorMsg) { showToast(voiceErrorMsg); return; }
+    const said = (voiceFinalText || voiceLiveText).trim();
     if (said) handleVoiceResult(said);
+    else showToast('🎤 Ничего не расслышал');
   };
 
   try {
     recognition.start();
+    armTimeout(NO_SPEECH_MS);
   } catch (e) {
     recognition = null;
-    overlay.classList.remove('open');
+    closeVoiceOverlay();
     showToast('🎤 Не удалось запустить микрофон');
   }
 }
 
+// «Готово» — stop() корректно завершает запись и отдаёт распознанное.
+// (abort() результат отбрасывает, поэтому он только в «Отмене».)
+function finishVoice() {
+  clearTimeout(voiceTimer);
+  if (!recognition) { closeVoiceOverlay(); return; }
+  document.getElementById('voice-hint').textContent = 'Обрабатываю…';
+  try {
+    recognition.stop();
+  } catch (e) {
+    recognition = null;
+    closeVoiceOverlay();
+  }
+  // Страховка: некоторые браузеры не присылают onend после stop().
+  setTimeout(() => {
+    if (!recognition) return;
+    const r = recognition;
+    recognition = null;
+    try { r.abort(); } catch (e) {}
+    closeVoiceOverlay();
+    const said = (voiceFinalText || voiceLiveText).trim();
+    if (said) handleVoiceResult(said);
+    else showToast('🎤 Ничего не расслышал');
+  }, 1500);
+}
+
 function stopVoice() {
+  clearTimeout(voiceTimer);
+  voiceCancelled = true;
   const r = recognition;
   recognition = null;
-  document.getElementById('voice-overlay').classList.remove('open');
+  closeVoiceOverlay();
   if (r) { try { r.abort(); } catch (e) {} }
 }
 
+let voiceBatch = [];
+
+function openVoiceBatchModal(list) {
+  voiceBatch = list;
+  renderVoiceBatch();
+  document.getElementById('voice-batch-modal').classList.add('open');
+  haptic('medium');
+}
+
+function renderVoiceBatch() {
+  document.getElementById('vb-count').textContent = voiceBatch.length;
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('vb-list').innerHTML = voiceBatch.map((p, i) => {
+    const cat = (p.type === 'income' ? CATEGORIES.income : CATEGORIES.expense).find(c => c.id === p.cat);
+    const acc = ACCOUNTS.find(a => a.id === p.account);
+    const d = p.date || today;
+    const dateStr = new Date(d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+    return `<div class="tx-item" style="cursor:default">
+      <div class="tx-content">
+        <div class="tx-icon" style="background:${getCatBg(p.cat)}22">${cat ? cat.icon : '📦'}</div>
+        <div class="tx-info">
+          <div class="tx-name">${esc(p.name || (cat ? cat.label : 'Операция'))}</div>
+          <div class="tx-meta">${cat ? cat.label : 'Без категории'} · ${acc ? acc.icon + ' ' + acc.label : ''} · ${dateStr}</div>
+        </div>
+        <div class="tx-amounts">
+          <div class="tx-primary ${p.type}">${p.type === 'income' ? '+' : '-'}${fmt(p.amount, p.currency)}</div>
+        </div>
+        <button onclick="removeVoiceBatchItem(${i})" style="background:none;border:none;color:var(--text3);font-size:20px;cursor:pointer;padding:0 4px">×</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function removeVoiceBatchItem(i) {
+  voiceBatch.splice(i, 1);
+  haptic();
+  if (!voiceBatch.length) closeModal('voice-batch-modal');
+  else renderVoiceBatch();
+}
+
+function commitVoiceBatch() {
+  const today = new Date().toISOString().split('T')[0];
+  let idSeq = Date.now();
+  voiceBatch.forEach(p => {
+    const cats = p.type === 'income' ? CATEGORIES.income : CATEGORIES.expense;
+    const cat = cats.find(c => c.id === p.cat);
+    state.transactions.unshift({
+      id: ++idSeq,
+      type: p.type,
+      amount: p.amount,
+      currency: p.currency,
+      name: p.name || (cat ? cat.icon + ' ' + cat.label : 'Операция'),
+      cat: p.cat || (p.type === 'expense' ? 'other' : 'salary'),
+      account: p.account,
+      date: p.date || today,
+      note: '',
+      recurring: false,
+      createdAt: new Date().toISOString(),
+    });
+  });
+  const n = voiceBatch.length;
+  voiceBatch = [];
+  save();
+  closeModal('voice-batch-modal');
+  refreshAll();
+  haptic('medium');
+  showToast(`✅ Добавлено операций: ${n}`);
+}
+
 function handleVoiceResult(said) {
-  const parsed = parseVoice(said);
+  // Несколько позиций в одной фразе — показываем список на подтверждение.
+  const list = parseVoiceMulti(said);
+  if (list.length > 1) { openVoiceBatchModal(list); return; }
+
+  const parsed = list[0] || parseVoice(said);
   if (!parsed) { showToast('🎤 Не разобрал фразу'); return; }
 
   // С FAB — открываем чистую форму; из модалки — дозаполняем текущую.
@@ -2437,7 +2662,13 @@ function downloadFile(content, filename, type) {
 function clearAll() {
   if (confirm('Удалить все данные? Это нельзя отменить.')) {
     state.transactions = []; state.budgets = []; state.goals = []; state.debts = [];
-    save(); refreshAll(); showToast('🗑️ Данные удалены');
+    state.filterCat = null;
+    save();
+    // Перерисовываем все экраны, а не только активный: иначе на неактивных
+    // вкладках оставались старые графики, чипы фильтров и списки.
+    renderHome(); buildFilterChips(); renderHistory();
+    renderStats(); renderBudgets(); renderGoals(); renderDebts();
+    showToast('🗑️ Данные удалены');
   }
 }
 
