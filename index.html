@@ -9,10 +9,10 @@
 <meta name="theme-color" content="#0a0a0f" id="theme-meta">
 <title>Мои финансы</title>
 <link rel="manifest" href="manifest.json">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<!-- Chart.js и Tesseract.js грузятся лениво (см. loadScript) — не блокируют старт -->
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+.hidden { display: none !important; }
 :root {
   --bg: #0a0a0f; --bg2: #13131a; --bg3: #1c1c26; --bg4: #242433;
   --border: rgba(255,255,255,0.08); --border2: rgba(255,255,255,0.14);
@@ -28,7 +28,9 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --shadow: 0 4px 24px rgba(0,0,0,0.3);
 }
-body.light {
+/* Тема переключается на <html>: правило `html, body` берёт из :root,
+   поэтому переменные на body фон и цвет текста не перекрывали. */
+html.light {
   --bg: #f2f2f7; --bg2: #ffffff; --bg3: #f2f2f7; --bg4: #e5e5ea;
   --border: rgba(0,0,0,0.08); --border2: rgba(0,0,0,0.14);
   --text: #1c1c1e; --text2: #6b6b80; --text3: #aeaeb2;
@@ -38,11 +40,13 @@ body.light {
   --shadow: 0 2px 12px rgba(0,0,0,0.1);
 }
 html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); overscroll-behavior: none; transition: background 0.3s, color 0.3s; }
+/* Явно, чтобы фон страницы и поля вокруг центрированной колонки точно меняли тему. */
+html.light, html.light body { background: #f2f2f7; color: #1c1c1e; }
 body { display: flex; flex-direction: column; max-width: 430px; margin: 0 auto; position: relative; }
 
 /* NAV */
 .nav { display: flex; background: rgba(10,10,15,0.95); border-top: 0.5px solid var(--border); position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 430px; padding: 8px 0 calc(8px + var(--safe-bottom)); z-index: 100; backdrop-filter: blur(20px); transition: background 0.3s; }
-body.light .nav { background: rgba(242,242,247,0.95); }
+html.light .nav { background: rgba(242,242,247,0.95); }
 .nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; background: none; border: none; color: var(--text3); font-size: 10px; font-family: var(--font); cursor: pointer; padding: 4px 0; transition: color 0.2s; }
 .nav-btn.active { color: var(--blue); }
 .nav-btn svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.8; }
@@ -226,7 +230,7 @@ body.light .nav { background: rgba(242,242,247,0.95); }
 /* OCR */
 .ocr-btn { width: 100%; padding: 12px; background: var(--bg3); border: 0.5px dashed var(--border2); border-radius: var(--radius-sm); color: var(--text3); font-size: 14px; font-family: var(--font); cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 16px; }
 .ocr-btn:active { background: var(--bg4); }
-#ocr-input { display: none; }
+#ocr-input, #ocr-gallery { display: none; }
 .ocr-status { text-align: center; font-size: 13px; color: var(--text2); padding: 8px; }
 .ocr-progress { width: 100%; height: 3px; background: var(--bg4); border-radius: 2px; margin-top: 6px; overflow: hidden; display: none; }
 .ocr-progress-fill { height: 100%; background: var(--blue); border-radius: 2px; transition: width 0.3s; }
@@ -292,6 +296,31 @@ select.form-input option { background: #1c1c26; }
 /* EDIT TX highlight */
 .tx-item.editing { background: var(--blue-bg); }
 
+/* VOICE */
+.voice-fab { position: fixed; bottom: calc(72px + var(--safe-bottom) + 16px); right: 84px; width: 52px; height: 52px; border-radius: 50%; background: var(--purple); border: none; color: white; font-size: 22px; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 20px rgba(167,139,250,0.4); z-index: 99; transition: transform 0.15s; }
+.voice-fab:active { transform: scale(0.92); }
+.voice-fab.hidden { display: none; }
+.mic-inline { width: 46px; flex: 0 0 auto; background: var(--purple-bg); border: 0.5px solid rgba(167,139,250,0.3); border-radius: var(--radius-sm); color: var(--purple); font-size: 18px; cursor: pointer; }
+.voice-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.82); z-index: 300; flex-direction: column; align-items: center; justify-content: center; gap: 20px; backdrop-filter: blur(6px); padding: 20px; text-align: center; }
+.voice-overlay.open { display: flex; }
+.voice-orb { width: 96px; height: 96px; border-radius: 50%; background: var(--purple); display: flex; align-items: center; justify-content: center; font-size: 40px; box-shadow: 0 0 0 0 rgba(167,139,250,0.5); animation: pulse 1.6s infinite; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(167,139,250,0.5); } 70% { box-shadow: 0 0 0 28px rgba(167,139,250,0); } 100% { box-shadow: 0 0 0 0 rgba(167,139,250,0); } }
+.voice-text { color: #f0f0f8; font-size: 18px; font-weight: 500; min-height: 50px; max-width: 320px; line-height: 1.4; }
+.voice-hint { color: #9090a8; font-size: 13px; max-width: 300px; line-height: 1.5; }
+.voice-cancel { padding: 12px 28px; border-radius: 24px; background: rgba(255,255,255,0.1); border: 0.5px solid rgba(255,255,255,0.2); color: #f0f0f8; font-size: 15px; font-family: var(--font); cursor: pointer; }
+.voice-chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; max-width: 340px; }
+.voice-chip { font-size: 12px; color: #9090a8; background: rgba(255,255,255,0.07); border-radius: 20px; padding: 5px 12px; }
+
+/* RECEIPT PREVIEW */
+.receipt-row { display: flex; gap: 8px; margin-bottom: 16px; }
+.receipt-row .ocr-btn { margin-bottom: 0; flex: 1; }
+.ocr-found { background: var(--green-bg); border: 0.5px solid rgba(46,204,138,0.3); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 13px; color: var(--text2); margin-bottom: 12px; line-height: 1.5; display: none; }
+.ocr-found strong { color: var(--green); }
+
+/* ACCOUNTS */
+.account-card.clickable { cursor: pointer; }
+.account-negative { color: var(--red) !important; }
+
 /* TOAST */
 .toast { position: fixed; bottom: calc(90px + var(--safe-bottom)); left: 50%; transform: translateX(-50%) translateY(20px); background: var(--bg3); border: 0.5px solid var(--border2); color: var(--text); padding: 10px 20px; border-radius: 20px; font-size: 14px; z-index: 999; opacity: 0; transition: all 0.3s; white-space: nowrap; box-shadow: var(--shadow); }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
@@ -339,6 +368,14 @@ select.form-input option { background: #1c1c26; }
       <div class="ie-label"><span class="ie-dot" style="background:var(--red)"></span>Расходы</div>
       <div class="ie-amount expense" id="total-expense">0 ₽</div>
     </div>
+  </div>
+
+  <div class="section">
+    <div class="section-header">
+      <span class="section-title">Счета</span>
+      <button class="section-link" onclick="openTransferFromAccounts()">Перевод →</button>
+    </div>
+    <div id="accounts-list" class="account-list"></div>
   </div>
 
   <div class="section">
@@ -408,9 +445,9 @@ select.form-input option { background: #1c1c26; }
     <div class="header-balance" style="font-size:26px">Статистика</div>
   </div>
   <div class="stat-tabs">
-    <button class="stat-tab active" onclick="setStatPeriod('month',this)" style="color:#ffffff;background:#5b8fff;border-color:transparent">Месяц</button>
-    <button class="stat-tab" onclick="setStatPeriod('week',this)" style="color:#9090a8">Неделя</button>
-    <button class="stat-tab" onclick="setStatPeriod('all',this)" style="color:#9090a8">Всё</button>
+    <button class="stat-tab active" onclick="setStatPeriod('month',this)">Месяц</button>
+    <button class="stat-tab" onclick="setStatPeriod('week',this)">Неделя</button>
+    <button class="stat-tab" onclick="setStatPeriod('all',this)">Всё</button>
   </div>
   <div class="section" style="padding:0 20px">
     <div class="month-compare" id="month-compare"></div>
@@ -463,6 +500,17 @@ select.form-input option { background: #1c1c26; }
     <div class="settings-row" style="border-radius:var(--radius-sm)">
       <span class="settings-key">🌙 Тёмная тема</span>
       <button class="toggle" id="theme-toggle" onclick="toggleTheme()"></button>
+    </div>
+  </div>
+  <div class="settings-section">
+    <div class="settings-title">Голосовой ввод</div>
+    <div class="settings-row" style="border-radius:var(--radius-sm)">
+      <span class="settings-key">🎤 Кнопка микрофона</span>
+      <button class="toggle" id="voice-toggle" onclick="toggleVoiceEnabled()"></button>
+    </div>
+    <div style="font-size:11px;color:var(--text3);line-height:1.5;padding:10px 4px 0">
+      ⚠️ Распознавание речи выполняется браузером: в Chrome аудио отправляется на серверы Google. Сами операции по-прежнему хранятся только на устройстве. Выключите тумблер, если не хотите этого.
+      <span id="voice-support-note"></span>
     </div>
   </div>
   <div class="settings-section">
@@ -579,7 +627,22 @@ select.form-input option { background: #1c1c26; }
     <button class="submit-btn" onclick="saveDebt()">Добавить</button>
   </div>
 </div>
+<button class="voice-fab hidden" id="voice-fab" onclick="startVoice(true)" aria-label="Добавить операцию голосом">🎤</button>
 <button class="fab" onclick="openAddModal()" aria-label="Добавить операцию">+</button>
+
+<!-- VOICE OVERLAY -->
+<div class="voice-overlay" id="voice-overlay">
+  <div class="voice-orb" id="voice-orb">🎤</div>
+  <div class="voice-text" id="voice-text">Слушаю…</div>
+  <div class="voice-hint" id="voice-hint">Скажите, например: «кофе 250 рублей картой»</div>
+  <div class="voice-chips">
+    <span class="voice-chip">такси 400</span>
+    <span class="voice-chip">продукты 1500 наличными</span>
+    <span class="voice-chip">зарплата 90000 доход</span>
+    <span class="voice-chip">обед 350 вчера</span>
+  </div>
+  <button class="voice-cancel" onclick="stopVoice()">Отмена</button>
+</div>
 
 <!-- ADD/EDIT TRANSACTION MODAL -->
 <div class="modal-bg" id="add-modal" onclick="closeModal('add-modal')">
@@ -593,12 +656,15 @@ select.form-input option { background: #1c1c26; }
       <button class="seg-btn" id="seg-transfer" onclick="setType('transfer')">Перевод</button>
     </div>
 
-    <label class="ocr-btn" for="ocr-input">
-      📷 Сфотографировать чек
-    </label>
+    <div class="receipt-row" id="receipt-row">
+      <label class="ocr-btn" for="ocr-input">📷 Сфотографировать чек</label>
+      <label class="ocr-btn" for="ocr-gallery" style="flex:0 0 52px">🖼️</label>
+    </div>
     <input type="file" id="ocr-input" accept="image/*" capture="environment" onchange="parseReceipt(this)">
+    <input type="file" id="ocr-gallery" accept="image/*" onchange="parseReceipt(this)">
     <div id="ocr-status" class="ocr-status" style="display:none"></div>
     <div class="ocr-progress" id="ocr-progress"><div class="ocr-progress-fill" id="ocr-progress-fill" style="width:0%"></div></div>
+    <div class="ocr-found" id="ocr-found"></div>
 
     <div class="form-group">
       <label class="form-label">Сумма</label>
@@ -639,9 +705,12 @@ select.form-input option { background: #1c1c26; }
 
     <div class="form-group">
       <label class="form-label">Название</label>
-      <div style="position:relative">
-        <input class="form-input" id="tx-name" type="text" placeholder="Кофе, зарплата..." oninput="showAutocomplete()" onblur="hideAutocomplete()">
-        <div class="autocomplete-list" id="autocomplete-list"></div>
+      <div style="display:flex;gap:8px">
+        <div style="position:relative;flex:1">
+          <input class="form-input" id="tx-name" type="text" placeholder="Кофе, зарплата..." oninput="showAutocomplete()" onblur="hideAutocomplete()">
+          <div class="autocomplete-list" id="autocomplete-list"></div>
+        </div>
+        <button class="mic-inline hidden" id="mic-inline" onclick="startVoice(false)" aria-label="Заполнить голосом">🎤</button>
       </div>
     </div>
 
@@ -767,15 +836,82 @@ const CATEGORIES = {
 
 const GOAL_ICONS = ['🏖️','💻','🚗','🏠','📱','✈️','🎓','💍','🏋️','🎮','📷','🎸','🎯','🌍','⛵','🏔️'];
 
+const ACCOUNTS = [
+  {id:'card',label:'Карта',icon:'💳',type:'Банковская карта'},
+  {id:'cash',label:'Наличные',icon:'💵',type:'Кошелёк'},
+  {id:'crypto',label:'Крипта',icon:'₿',type:'Криптокошелёк'},
+  {id:'invest',label:'Инвестиции',icon:'📈',type:'Брокерский счёт'},
+];
+
+// Ключевые слова → категория. Используется и в OCR (по названию магазина), и в голосе.
+const CAT_KEYWORDS = {
+  food: ['пятёроч','пятероч','магнит','перекрёст','перекрест','ашан','лента','дикси','вкусвилл','метро','окей','продукт','супермаркет','магазин','кофе','кафе','столов','обед','завтрак','ужин','еда','хлеб','молок','пицц','суши','бургер','шаверм','ресторан','бар ','пекарн'],
+  transport: ['яндекс go','яндекс такси','ситимобил','такси','убер','метро ','автобус','трамвай','троллейбус','маршрутк','бензин','азс','лукойл','газпромнефт','роснефть','каршеринг','делимобил','белка','парковк','проезд','электричк','ржд','поезд','бла'],
+  delivery: ['доставка','деливери','delivery','самокат','купер','сбермаркет','яндекс лавка','лавка','озон','ozon','вайлдберриз','wildberries','wb '],
+  shopping: ['покупк','одежд','обув','кроссовк','кед','футболк','джинс','куртк','рубашк','днс','мвидео','эльдорадо','ситилинк','икеа','ikea','хофф','леруа','фикс прайс','zara','h&m','спортмастер'],
+  health: ['аптек','ригла','36,6','36.6','здоров','врач','клиник','стоматол','анализ','инвитро','гемотест','лекарств','таблет','медиц'],
+  entertainment: ['кино','театр','концерт','боулинг','игр','стим','steam','playstation','xbox','подписк','нетфликс','netflix','кинопоиск','иви','okko','развлеч','клуб'],
+  housing: ['квартир','аренд','жкх','коммунал','квартплат','электричеств','газ ','вода ','интернет','ремонт','мебел','ипотек'],
+  education: ['курс','учеб','школ','универ','книг','обучен','репетитор','лекц','сертификац'],
+  beauty: ['парикмахер','салон','маникюр','космет','стрижк','барбер','ногт','бров','спа','массаж'],
+  sport: ['спортзал','фитнес','тренаж','бассейн','йог','тренер','абонемент','зал'],
+  travel: ['отель','гостиниц','авиабилет','билет на самолёт','самолёт','букинг','booking','airbnb','путешеств','тур ','виза','аэропорт','хостел'],
+};
+
+const INCOME_KEYWORDS = {
+  salary: ['зарплат','зп ','аванс','оклад','получк'],
+  freelance: ['фриланс','заказ','подработк','халтур','проект'],
+  invest: ['дивиденд','купон','вклад','процент','акци','инвест'],
+  gift: ['подарок','подарил','презент'],
+  rental: ['аренд','сдал','квартирант','наниматель'],
+  cashback: ['кэшбэк','кешбэк','cashback','бонус','возврат'],
+  business: ['бизнес','выручк','прибыл','продаж'],
+};
+
 let state = {
   transactions: [], budgets: [], goals: [],
   usdRate: 88, currentType: 'expense', selectedCat: null,
   historyPeriod: 'day', statPeriod: 'month',
   filterCat: null, editingTxId: null, recurringOn: false,
-  darkMode: true, selectedGoalIcon: '🎯',
+  darkMode: true, selectedGoalIcon: '🎯', voiceEnabled: true,
 };
 
 let charts = { bar: null, donut: null, line: null };
+
+// ---- HELPERS ----
+// Экранирование: имена, заметки и названия целей попадают в innerHTML.
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// Ленивая загрузка внешних библиотек — Chart.js и Tesseract больше не блокируют старт.
+const scriptCache = {};
+function loadScript(src) {
+  if (scriptCache[src]) return scriptCache[src];
+  scriptCache[src] = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = resolve;
+    s.onerror = () => { delete scriptCache[src]; reject(new Error('load failed: ' + src)); };
+    document.head.appendChild(s);
+  });
+  return scriptCache[src];
+}
+const CHART_JS = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js';
+const TESSERACT_JS = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+const JSQR_JS = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
+
+// Единая точка обновления UI после любого изменения данных.
+function refreshAll() {
+  renderHome();
+  if (document.getElementById('page-history').classList.contains('active')) {
+    buildFilterChips(); renderHistory();
+  }
+  if (document.getElementById('page-stats').classList.contains('active')) renderStats();
+  if (document.getElementById('page-budgets').classList.contains('active')) { renderBudgets(); renderGoals(); }
+  if (document.getElementById('page-debts').classList.contains('active')) renderDebts();
+}
 
 // ---- STORAGE ----
 function load() {
@@ -794,7 +930,7 @@ function save() {
 }
 function toRub(amount, currency) { return currency === 'USD' ? amount * state.usdRate : amount; }
 function fmt(n, currency) {
-  if (currency === 'USD') return '$' + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,'  ');
+  if (currency === 'USD') return '$' + n.toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2});
   return Math.round(n).toLocaleString('ru-RU') + ' ₽';
 }
 function fmtRub(n) { return Math.round(n).toLocaleString('ru-RU') + ' ₽'; }
@@ -816,7 +952,7 @@ function haptic(type='light') {
 
 // ---- THEME ----
 function applyTheme() {
-  document.body.classList.toggle('light', !state.darkMode);
+  document.documentElement.classList.toggle('light', !state.darkMode);
   const toggle = document.getElementById('theme-toggle');
   if (toggle) toggle.classList.toggle('on', state.darkMode);
   document.getElementById('theme-meta').setAttribute('content', state.darkMode ? '#0a0a0f' : '#f2f2f7');
@@ -859,6 +995,9 @@ function openAddModal() {
   document.getElementById('tx-date').value = new Date().toISOString().split('T')[0];
   document.getElementById('ocr-status').style.display = 'none';
   document.getElementById('ocr-progress').style.display = 'none';
+  document.getElementById('ocr-found').style.display = 'none';
+  document.getElementById('tx-currency').value = 'RUB';
+  document.getElementById('tx-account').value = 'card';
   document.getElementById('add-modal-title').textContent = 'Новая операция';
   document.getElementById('submit-tx-btn').textContent = 'Добавить';
   document.getElementById('delete-tx-btn').style.display = 'none';
@@ -935,7 +1074,7 @@ function setType(type) {
   document.getElementById('transfer-fields').style.display = type === 'transfer' ? '' : 'none';
   document.getElementById('cat-section').style.display = type === 'transfer' ? 'none' : '';
   document.getElementById('account-section').style.display = type === 'transfer' ? 'none' : '';
-  document.querySelector('label[for="ocr-input"]').style.display = type === 'expense' ? '' : 'none';
+  document.getElementById('receipt-row').style.display = type === 'expense' ? '' : 'none';
   renderCatGrid();
 }
 
@@ -980,10 +1119,14 @@ function showAutocomplete() {
   const matches = getNameHistory().filter(n => n.toLowerCase().includes(val)).slice(0, 5);
   if (!matches.length) { list.style.display = 'none'; return; }
   list.style.display = 'block';
-  list.innerHTML = matches.map(n => `<div class="autocomplete-item" onmousedown="pickAutocomplete('${n.replace(/'/g,"\\'")}')"><span>${n}</span></div>`).join('');
+  autocompleteMatches = matches;
+  list.innerHTML = matches.map((n, i) => `<div class="autocomplete-item" onmousedown="pickAutocomplete(${i})"><span>${esc(n)}</span></div>`).join('');
 }
+let autocompleteMatches = [];
 function hideAutocomplete() { setTimeout(() => { document.getElementById('autocomplete-list').style.display = 'none'; }, 150); }
-function pickAutocomplete(name) {
+function pickAutocomplete(idx) {
+  const name = autocompleteMatches[idx];
+  if (name === undefined) return;
   document.getElementById('tx-name').value = name;
   document.getElementById('autocomplete-list').style.display = 'none';
   // try auto-pick category from history
@@ -1016,7 +1159,7 @@ function addTransaction() {
     } else {
       state.transactions.unshift(tx);
     }
-    save(); closeModal('add-modal'); renderHome();
+    save(); closeModal('add-modal'); refreshAll();
     haptic('medium'); showToast('✅ Перевод записан');
     return;
   }
@@ -1041,7 +1184,7 @@ function addTransaction() {
     showToast('✅ Операция добавлена');
   }
 
-  save(); closeModal('add-modal'); renderHome();
+  save(); closeModal('add-modal'); refreshAll();
   haptic('medium');
 }
 
@@ -1049,7 +1192,7 @@ function deleteCurrentTx() {
   if (!state.editingTxId) return;
   if (!confirm('Удалить операцию?')) return;
   state.transactions = state.transactions.filter(t => t.id !== state.editingTxId);
-  save(); closeModal('add-modal'); renderHome();
+  save(); closeModal('add-modal'); refreshAll();
   haptic('heavy'); showToast('🗑️ Операция удалена');
 }
 
@@ -1104,12 +1247,64 @@ function renderHome() {
     rateAge.textContent = mins < 60 ? mins + ' мин назад' : Math.round(mins/60) + ' ч назад';
   } else { rateAge.textContent = 'вручную'; }
 
+  renderAccounts();
   renderRecentTx();
   renderForecast(totalIncome, totalExpense);
   renderInsights();
   renderBudgetPreview();
   renderTopCats(monthStart);
   applyTheme();
+}
+
+// ---- ACCOUNTS ----
+// Баланс каждого счёта = доходы − расходы по нему, с учётом переводов.
+function computeAccountBalances() {
+  const bal = {};
+  ACCOUNTS.forEach(a => { bal[a.id] = { rub: 0, usd: 0 }; });
+  state.transactions.forEach(tx => {
+    const cur = tx.currency === 'USD' ? 'usd' : 'rub';
+    if (tx.type === 'transfer') {
+      const from = tx.account, to = tx.toAccount;
+      if (bal[from]) bal[from][cur] -= tx.amount;
+      if (bal[to]) bal[to][cur] += tx.amount;
+      return;
+    }
+    const acc = tx.account || 'card';
+    if (!bal[acc]) bal[acc] = { rub: 0, usd: 0 };
+    bal[acc][cur] += (tx.type === 'income' ? 1 : -1) * tx.amount;
+  });
+  return bal;
+}
+
+function renderAccounts() {
+  const bal = computeAccountBalances();
+  const el = document.getElementById('accounts-list');
+  // Показываем счёт, если по нему есть движение, либо это карта/наличные (базовые).
+  const visible = ACCOUNTS.filter(a =>
+    a.id === 'card' || a.id === 'cash' || bal[a.id].rub !== 0 || bal[a.id].usd !== 0
+  );
+  el.innerHTML = visible.map(a => {
+    const b = bal[a.id];
+    const totalRub = b.rub + b.usd * state.usdRate;
+    const neg = totalRub < 0;
+    return `<div class="account-card">
+      <div class="account-icon">${a.icon}</div>
+      <div class="account-info">
+        <div class="account-name">${a.label}</div>
+        <div class="account-type">${a.type}</div>
+      </div>
+      <div class="account-balance">
+        <div class="account-rub ${neg ? 'account-negative' : ''}">${fmtRub(totalRub)}</div>
+        ${b.usd ? `<div class="account-usd">${fmt(b.usd, 'USD')}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Открыть модалку сразу на вкладке «Перевод».
+function openTransferFromAccounts() {
+  openAddModal();
+  setType('transfer');
 }
 
 // ---- TOP CATEGORIES ----
@@ -1148,12 +1343,12 @@ function renderTxItem(tx, showSwipe=false) {
   const secondary = tx.currency === 'USD' ? `≈ ${fmtRub(rubVal)}` : '';
   const dateStr = new Date(tx.date).toLocaleDateString('ru-RU', {day:'numeric',month:'short'});
   const recurBadge = tx.recurring ? '<span class="recurring-badge">🔁</span>' : '';
-  return `<div class="tx-item" ontouchstart="txTouchStart(event,${tx.id})" ontouchmove="txTouchMove(event,${tx.id})" ontouchend="txTouchEnd(event,${tx.id})" onclick="openEditModal(${tx.id})" id="txitem-${tx.id}">
+  return `<div class="tx-item" ontouchstart="txTouchStart(event,${tx.id})" ontouchmove="txTouchMove(event,${tx.id})" ontouchend="txTouchEnd(event,${tx.id})" onclick="txClick(${tx.id})" id="txitem-${tx.id}">
     <div class="tx-content" id="txcontent-${tx.id}">
       <div class="tx-icon" style="background:${bg}22">${icon}</div>
       <div class="tx-info">
-        <div class="tx-name">${tx.name}${recurBadge}</div>
-        <div class="tx-meta">${dateStr}${tx.note ? ' · '+tx.note : ''}</div>
+        <div class="tx-name">${esc(tx.name)}${recurBadge}</div>
+        <div class="tx-meta">${dateStr}${tx.note ? ' · '+esc(tx.note) : ''}</div>
       </div>
       <div class="tx-amounts">
         <div class="tx-primary ${tx.type}">${sign}${fmt(tx.amount, tx.currency)}</div>
@@ -1166,6 +1361,15 @@ function renderTxItem(tx, showSwipe=false) {
 
 // ---- SWIPE TO DELETE ----
 const swipeState = {};
+let swipeBlockUntil = 0;
+
+// Клик по операции игнорируется сразу после свайпа, иначе отмена свайпа
+// открывала модалку редактирования.
+function txClick(id) {
+  if (Date.now() < swipeBlockUntil) return;
+  openEditModal(id);
+}
+
 function txTouchStart(e, id) {
   swipeState[id] = { startX: e.touches[0].clientX, swiped: false };
 }
@@ -1183,11 +1387,12 @@ function txTouchMove(e, id) {
 function txTouchEnd(e, id) {
   if (!swipeState[id]) return;
   const dx = swipeState[id].dx || 0;
+  if (dx > 10) swipeBlockUntil = Date.now() + 400; // подавляем click после свайпа
   if (dx > 60) {
     // delete
     if (confirm('Удалить операцию?')) {
       state.transactions = state.transactions.filter(t => t.id !== id);
-      save(); renderHome(); renderHistory();
+      save(); refreshAll();
       haptic('heavy'); showToast('🗑️ Удалено');
     } else {
       resetSwipe(id);
@@ -1301,14 +1506,9 @@ function setFilterCat(cat) { state.filterCat = cat; buildFilterChips(); renderHi
 
 function setPeriod(p, btn) {
   state.historyPeriod = p;
-  document.querySelectorAll('#history-period .period-tab').forEach(b => {
-    b.classList.remove('active');
-    b.style.color = '#5a5a72';
-    b.style.background = 'transparent';
-  });
+  // Только классы — инлайн-цвета ломали светлую тему.
+  document.querySelectorAll('#history-period .period-tab').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  btn.style.color = '#f0f0f8';
-  btn.style.background = '#242433';
   renderHistory();
 }
 
@@ -1361,18 +1561,12 @@ function renderHistory() {
 // ---- STATS ----
 function setStatPeriod(p, btn) {
   state.statPeriod = p;
-  document.querySelectorAll('.stat-tab').forEach(b => {
-    b.classList.remove('active');
-    b.style.color = '#5a5a72';
-    b.style.background = 'transparent';
-  });
+  document.querySelectorAll('.stat-tab').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  btn.style.color = '#ffffff';
-  btn.style.background = '#5b8fff';
   renderStats();
 }
 
-function renderStats() {
+async function renderStats() {
   const now = new Date();
   let txs = state.transactions;
   if (state.statPeriod === 'month') {
@@ -1383,6 +1577,15 @@ function renderStats() {
     txs = txs.filter(tx => new Date(tx.date) >= ws);
   }
   renderMonthCompare();
+
+  // Chart.js подтягивается только при первом открытии статистики.
+  try {
+    await loadScript(CHART_JS);
+  } catch (e) {
+    document.getElementById('donut-legend').innerHTML =
+      '<span style="font-size:12px;color:var(--text3)">📊 Графики недоступны офлайн — откройте страницу с интернетом один раз, дальше закешируется.</span>';
+    return;
+  }
   renderBarChart(txs);
   renderDonutChart(txs);
   renderLineChart(txs);
@@ -1496,7 +1699,7 @@ function saveBudget() {
   const existing = state.budgets.findIndex(b => b.cat === cat);
   if (existing >= 0) state.budgets[existing].limit = limit;
   else state.budgets.push({cat, limit, id:Date.now()});
-  save(); closeModal('budget-modal'); renderBudgets();
+  save(); closeModal('budget-modal'); renderBudgets(); renderHome();
   showToast('✅ Бюджет сохранён');
 }
 
@@ -1534,7 +1737,7 @@ function renderBudgets() {
 
 function deleteBudget(id) {
   state.budgets = state.budgets.filter(b=>b.id!==id);
-  save(); renderBudgets(); showToast('🗑️ Бюджет удалён');
+  save(); renderBudgets(); renderHome(); showToast('🗑️ Бюджет удалён');
 }
 
 // ---- GOALS ----
@@ -1589,7 +1792,7 @@ function renderGoals() {
     const left = g.target - g.current;
     return `<div class="goal-card">
       <div class="goal-header">
-        <div class="goal-name">${g.icon} ${g.name}${done?' ✅':''}</div>
+        <div class="goal-name">${esc(g.icon)} ${esc(g.name)}${done?' ✅':''}</div>
         <div class="goal-amounts"><div class="goal-current">${fmtRub(g.current)}</div><div style="font-size:11px;color:var(--text3)">из ${fmtRub(g.target)}</div></div>
       </div>
       <div class="goal-track"><div class="goal-fill" style="width:${pct}%;background:${done?'var(--green)':'var(--blue)'}"></div></div>
@@ -1604,15 +1807,21 @@ function renderGoals() {
 }
 
 // ---- RATE (CBR) ----
+// rateManual: курс введён вручную — автозагрузка ЦБ его больше не затирает
+// (раньше rateUpdatedAt = null приводил к fetchRate() при каждом старте).
 function editRate() {
   const r = prompt('Курс USD в рублях:', state.usdRate);
   if (r && !isNaN(r)) {
-    state.usdRate = parseFloat(r); state.rateUpdatedAt = null; save(); renderHome();
+    state.usdRate = parseFloat(r); state.rateUpdatedAt = null; state.rateManual = true;
+    save(); refreshAll();
   }
 }
 function saveRate() {
   const v = parseFloat(document.getElementById('rate-settings-input').value);
-  if (v && v > 0) { state.usdRate = v; state.rateUpdatedAt = null; save(); renderHome(); showToast('💾 Курс сохранён: 1$ = ' + v + ' ₽'); }
+  if (v && v > 0) {
+    state.usdRate = v; state.rateUpdatedAt = null; state.rateManual = true;
+    save(); refreshAll(); showToast('💾 Курс сохранён: 1$ = ' + v + ' ₽');
+  }
 }
 
 async function fetchRate() {
@@ -1627,7 +1836,8 @@ async function fetchRate() {
     if (!usd) throw new Error('no USD');
     state.usdRate = Math.round((usd.Value / usd.Nominal) * 100) / 100;
     state.rateUpdatedAt = new Date().toISOString();
-    save(); renderHome();
+    state.rateManual = false;
+    save(); refreshAll();
     if (rateBtn) { rateBtn.textContent = '✅'; setTimeout(() => { rateBtn.textContent = '🔄'; rateBtn.disabled = false; }, 2000); }
     showToast('💱 Курс ЦБ обновлён: 1$ = ' + state.usdRate + ' ₽');
   } catch(e) {
@@ -1637,68 +1847,538 @@ async function fetchRate() {
 }
 
 function autoFetchRateIfStale() {
-  if (!state.rateUpdatedAt) return;
+  if (state.rateManual) return;              // ручной курс не трогаем
+  if (!state.rateUpdatedAt) { fetchRate(); return; }
   const age = (Date.now() - new Date(state.rateUpdatedAt)) / 3600000;
   if (age > 12) fetchRate();
 }
 
-// ---- OCR (Tesseract.js) ----
+// ---- РАСПОЗНАВАНИЕ ЧЕКА ----
+// Стратегия: сначала QR-код чека ФНС (точная сумма и дата), при неудаче — OCR.
+
+function guessCategory(text, type = 'expense') {
+  if (!text) return null;
+  const t = String(text).toLowerCase();
+  const dict = type === 'income' ? INCOME_KEYWORDS : CAT_KEYWORDS;
+  let best = null, bestLen = 0;
+  for (const [cat, words] of Object.entries(dict)) {
+    for (const w of words) {
+      if (t.includes(w) && w.length > bestLen) { best = cat; bestLen = w.length; }
+    }
+  }
+  return best;
+}
+
+function fileToImage(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image decode failed')); };
+    img.src = url;
+  });
+}
+
+// Уменьшение + оттенки серого + растяжение контраста вокруг среднего.
+// Даёт заметный прирост точности Tesseract на фото чеков.
+function preprocessImage(img, maxSide, enhance) {
+  const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+  const w = Math.max(1, Math.round(img.width * scale));
+  const h = Math.max(1, Math.round(img.height * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0, w, h);
+  if (!enhance) return canvas;
+
+  const imgData = ctx.getImageData(0, 0, w, h);
+  const px = imgData.data;
+  let sum = 0;
+  for (let i = 0; i < px.length; i += 4) {
+    const g = 0.299 * px[i] + 0.587 * px[i+1] + 0.114 * px[i+2];
+    px[i] = px[i+1] = px[i+2] = g;
+    sum += g;
+  }
+  const mean = sum / (px.length / 4);
+  const k = 1.7; // сила контраста
+  for (let i = 0; i < px.length; i += 4) {
+    let v = (px[i] - mean) * k + mean;
+    v = v < 0 ? 0 : v > 255 ? 255 : v;
+    px[i] = px[i+1] = px[i+2] = v;
+  }
+  ctx.putImageData(imgData, 0, 0);
+  return canvas;
+}
+
+// QR российского чека: t=20240115T1230&s=1234.56&fn=...&i=...&fp=...&n=1
+function parseFnsQr(raw) {
+  if (!raw || raw.indexOf('s=') === -1) return null;
+  const params = {};
+  raw.split('&').forEach(pair => {
+    const eq = pair.indexOf('=');
+    if (eq > 0) params[pair.slice(0, eq)] = pair.slice(eq + 1);
+  });
+  const amount = parseFloat(String(params.s || '').replace(',', '.'));
+  if (!amount || amount <= 0 || amount > 10000000) return null;
+  let date = null;
+  const t = params.t || '';
+  if (/^\d{8}/.test(t)) {
+    const y = t.slice(0,4), m = t.slice(4,6), d = t.slice(6,8);
+    if (+m >= 1 && +m <= 12 && +d >= 1 && +d <= 31) date = `${y}-${m}-${d}`;
+  }
+  return { amount, date, source: 'qr' };
+}
+
+async function detectQR(img) {
+  // 1) Нативный BarcodeDetector (Chrome/Android) — быстрый и без загрузок.
+  try {
+    if ('BarcodeDetector' in window) {
+      const formats = await window.BarcodeDetector.getSupportedFormats();
+      if (formats.includes('qr_code')) {
+        const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+        const canvas = preprocessImage(img, 1600, false);
+        const codes = await detector.detect(canvas);
+        for (const c of codes) {
+          const parsed = parseFnsQr(c.rawValue);
+          if (parsed) return parsed;
+        }
+      }
+    }
+  } catch (e) { /* падаем в jsQR */ }
+
+  // 2) Фоллбэк jsQR (Safari, старые браузеры). Пробуем два масштаба.
+  try {
+    await loadScript(JSQR_JS);
+    for (const side of [1400, 900]) {
+      const canvas = preprocessImage(img, side, false);
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      const d = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = window.jsQR(d.data, d.width, d.height, { inversionAttempts: 'attemptBoth' });
+      if (code) {
+        const parsed = parseFnsQr(code.data);
+        if (parsed) return parsed;
+      }
+    }
+  } catch (e) { /* QR не найден */ }
+  return null;
+}
+
+// Разбор текста чека: сумма по приоритету ключевых слов, дата, магазин, категория.
+function parseReceiptText(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const numsIn = line => [...line.matchAll(/\d[\d\s ]*(?:[.,]\d{2})?/g)]
+    .map(m => parseFloat(m[0].replace(/[\s ]/g, '').replace(',', '.')))
+    .filter(n => n > 0 && n < 1000000);
+
+  const strong = /итог|к\s*оплате|всего\s*к\s*оплате|общая\s*сумма|total/i;
+  const weak = /сумма|наличными|безналичными|картой|оплата|электронными/i;
+
+  let amount = null;
+  // Сильные маркеры: берём максимум по всем таким строкам (ИТОГ обычно последний).
+  for (const l of lines) {
+    if (strong.test(l)) {
+      const n = numsIn(l);
+      if (n.length) amount = Math.max(amount || 0, Math.max(...n));
+    }
+  }
+  if (!amount) {
+    for (const l of lines) {
+      if (weak.test(l)) {
+        const n = numsIn(l);
+        if (n.length) amount = Math.max(amount || 0, Math.max(...n));
+      }
+    }
+  }
+  if (!amount) {
+    // Последний шанс — самое большое число с копейками во всём чеке.
+    const withCents = [...text.matchAll(/\d[\d\s ]*[.,]\d{2}/g)]
+      .map(m => parseFloat(m[0].replace(/[\s ]/g, '').replace(',', '.')))
+      .filter(n => n > 0 && n < 1000000);
+    if (withCents.length) amount = Math.max(...withCents);
+  }
+
+  // Дата: дд.мм.гггг / дд.мм.гг
+  let date = null;
+  const dm = text.match(/(\d{2})[.\-/](\d{2})[.\-/](\d{2,4})/);
+  if (dm) {
+    let y = dm[3].length === 2 ? '20' + dm[3] : dm[3];
+    const mo = +dm[2], da = +dm[1];
+    if (mo >= 1 && mo <= 12 && da >= 1 && da <= 31) {
+      const candidate = `${y}-${dm[2]}-${dm[1]}`;
+      // Чек из будущего — почти наверняка ошибка распознавания.
+      if (new Date(candidate) <= new Date(Date.now() + 86400000)) date = candidate;
+    }
+  }
+
+  // Магазин: первая осмысленная строка сверху.
+  let merchant = null;
+  for (const l of lines.slice(0, 6)) {
+    const clean = l.replace(/["«»*]/g, '').trim();
+    if (clean.length >= 3 && clean.length <= 40 && !/\d{4}/.test(clean) && /[А-Яа-яA-Za-z]{3}/.test(clean)) {
+      merchant = clean;
+      break;
+    }
+  }
+
+  return { amount, date, merchant, cat: guessCategory((merchant || '') + ' ' + text), source: 'ocr' };
+}
+
+// Заполняем форму найденным и показываем, что именно распозналось.
+function applyReceipt(res) {
+  const found = document.getElementById('ocr-found');
+  const parts = [];
+
+  if (res.amount) {
+    document.getElementById('tx-amount').value = res.amount;
+    document.getElementById('tx-currency').value = 'RUB';
+    parts.push(`Сумма: <strong>${fmtRub(res.amount)}</strong>`);
+  }
+  if (res.date) {
+    document.getElementById('tx-date').value = res.date;
+    parts.push(`Дата: <strong>${new Date(res.date).toLocaleDateString('ru-RU')}</strong>`);
+  }
+  if (res.merchant && !document.getElementById('tx-name').value.trim()) {
+    document.getElementById('tx-name').value = res.merchant;
+    parts.push(`Магазин: <strong>${esc(res.merchant)}</strong>`);
+  }
+  if (res.cat) {
+    state.selectedCat = res.cat;
+    renderCatGrid();
+    const info = CATEGORIES.expense.find(c => c.id === res.cat);
+    if (info) parts.push(`Категория: <strong>${info.icon} ${info.label}</strong>`);
+  }
+
+  if (!parts.length) { found.style.display = 'none'; return false; }
+  const src = res.source === 'qr' ? '📷 QR-код чека (точные данные)' : '🔍 Распознано с фото — проверьте';
+  found.innerHTML = `${src}<br>${parts.join(' · ')}`;
+  found.style.display = 'block';
+  return true;
+}
+
 async function parseReceipt(input) {
   const file = input.files[0];
+  input.value = '';
   if (!file) return;
+
   const status = document.getElementById('ocr-status');
   const progressBar = document.getElementById('ocr-progress');
   const progressFill = document.getElementById('ocr-progress-fill');
+  const found = document.getElementById('ocr-found');
+  found.style.display = 'none';
   status.style.display = 'block';
   progressBar.style.display = 'block';
-  status.innerHTML = '⏳ Распознаю чек...';
-  progressFill.style.width = '5%';
+  status.innerHTML = '⏳ Ищу QR-код чека…';
+  progressFill.style.width = '8%';
 
+  let img;
   try {
-    const imgUrl = URL.createObjectURL(file);
+    img = await fileToImage(file);
+  } catch (e) {
+    status.innerHTML = '❌ Не удалось открыть изображение.';
+    progressBar.style.display = 'none';
+    setTimeout(() => { status.style.display = 'none'; }, 3000);
+    return;
+  }
+
+  // --- Шаг 1: QR ---
+  try {
+    const qr = await detectQR(img);
+    if (qr) {
+      progressFill.style.width = '100%';
+      applyReceipt(qr);
+      status.innerHTML = '✅ QR-код чека распознан';
+      progressBar.style.display = 'none';
+      haptic('medium');
+      setTimeout(() => { status.style.display = 'none'; }, 2500);
+      return;
+    }
+  } catch (e) { /* идём в OCR */ }
+
+  // --- Шаг 2: OCR ---
+  status.innerHTML = '⏳ QR не найден, читаю текст…';
+  progressFill.style.width = '12%';
+  try {
+    await loadScript(TESSERACT_JS);
+    const canvas = preprocessImage(img, 1600, true);
     const worker = await Tesseract.createWorker('rus+eng', 1, {
       logger: m => {
         if (m.status === 'recognizing text') {
-          const pct = Math.round(m.progress * 100);
+          const pct = Math.max(12, Math.round(m.progress * 100));
           progressFill.style.width = pct + '%';
           status.innerHTML = `⏳ Распознаю: ${pct}%`;
         }
       }
     });
-
-    const { data: { text } } = await worker.recognize(imgUrl);
+    const { data: { text } } = await worker.recognize(canvas);
     await worker.terminate();
-    URL.revokeObjectURL(imgUrl);
-
-    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-    let foundAmount = null;
-
-    // ищем только строку с ИТОГ
-    for (const line of lines) {
-      if (/итог/i.test(line)) {
-        const nums = [...line.matchAll(/(\d[\d\s]*[.,]\d{2}|\d{3,})/g)]
-          .map(m => parseFloat(m[0].replace(/\s/g,'').replace(',','.')))
-          .filter(n => n > 0 && n < 500000);
-        if (nums.length) { foundAmount = nums[nums.length - 1]; break; }
-      }
-    }
 
     progressFill.style.width = '100%';
+    progressBar.style.display = 'none';
 
-    if (foundAmount) {
-      document.getElementById('tx-amount').value = foundAmount;
-      status.innerHTML = `✅ Сумма: ${fmtRub(foundAmount)}. Проверь и добавь.`;
+    const res = parseReceiptText(text);
+    if (applyReceipt(res)) {
+      status.innerHTML = res.amount ? '✅ Готово — проверьте поля' : '⚠️ Сумму найти не удалось';
+      haptic('medium');
     } else {
-      status.innerHTML = '⚠️ Слово "ИТОГ" не найдено — введи сумму вручную.';
+      status.innerHTML = '⚠️ Ничего не распозналось — введите вручную.';
     }
-    progressBar.style.display = 'none';
     setTimeout(() => { status.style.display = 'none'; }, 4000);
-  } catch(e) {
-    status.innerHTML = '❌ Ошибка OCR. Введи вручную.';
+  } catch (e) {
+    status.innerHTML = navigator.onLine
+      ? '❌ Ошибка распознавания. Введите вручную.'
+      : '📴 Офлайн: распознавание текста недоступно.';
     progressBar.style.display = 'none';
-    setTimeout(() => { status.style.display = 'none'; }, 3000);
+    setTimeout(() => { status.style.display = 'none'; }, 3500);
   }
-  input.value = '';
+}
+
+// ---- ГОЛОСОВОЙ ВВОД ----
+// Web Speech API + разбор фразы вида «кофе 250 рублей картой вчера».
+
+const NUM_WORDS = {
+  ноль:0, один:1, одна:1, одну:1, два:2, две:2, три:3, четыре:4, пять:5,
+  шесть:6, семь:7, восемь:8, девять:9, десять:10, одиннадцать:11, двенадцать:12,
+  тринадцать:13, четырнадцать:14, пятнадцать:15, шестнадцать:16, семнадцать:17,
+  восемнадцать:18, девятнадцать:19, двадцать:20, тридцать:30, сорок:40,
+  пятьдесят:50, шестьдесят:60, семьдесят:70, восемьдесят:80, девяносто:90,
+  сто:100, двести:200, триста:300, четыреста:400, пятьсот:500,
+  шестьсот:600, семьсот:700, восемьсот:800, девятьсот:900,
+};
+const MULT_WORDS = {
+  тысяча:1000, тысячи:1000, тысяч:1000, тысячу:1000, тыс:1000, косарь:1000, косаря:1000,
+  миллион:1000000, миллиона:1000000, миллионов:1000000, млн:1000000,
+};
+
+// Слова, которые не должны попасть в название операции.
+const STOP_WORDS = new Set([
+  'рубль','рубля','рублей','руб','р','₽','доллар','доллара','долларов','бакс','бакса','баксов','usd','$',
+  'картой','карта','карту','наличными','наличка','наличные','нал','налом','кэшем','кэш',
+  'криптой','крипта','крипте','инвестиции','инвестициями','брокер','счёта','счета','счёт',
+  'вчера','позавчера','сегодня','завтра',
+  'доход','доходы','расход','расходы','потратил','потратила','купил','купила','заплатил','заплатила',
+  'получил','получила','пришло','пришла','пришёл','потрачено','добавь','запиши','добавить','записать',
+  'на','за','в','и','по','с','со','из','это','было','был','примерно','около','где','то',
+]);
+
+function voiceSupported() {
+  return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+}
+
+// Числительные прописью: «тысяча пятьсот» → 1500.
+function wordsToNumber(tokens) {
+  let total = 0, current = 0, seen = false;
+  for (const t of tokens) {
+    if (NUM_WORDS[t] !== undefined) { current += NUM_WORDS[t]; seen = true; }
+    else if (MULT_WORDS[t] !== undefined) { current = (current || 1) * MULT_WORDS[t]; total += current; current = 0; seen = true; }
+    else return seen ? total + current : null;
+  }
+  return seen ? total + current : null;
+}
+
+function parseVoice(raw) {
+  // Запятую между цифрами не трогаем — это дробная часть суммы.
+  const text = String(raw).toLowerCase()
+    .replace(/[!?]/g, ' ')
+    .replace(/,(?!\d)/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+  if (!text) return null;
+  const res = { type: 'expense', currency: 'RUB', account: 'card', date: null, amount: null, name: '', cat: null };
+
+  // Внимание: \b в JS работает только с латиницей, для кириллицы его использовать нельзя.
+
+  // Тип операции
+  if (/(доход|зарплат|аванс|преми|получил|пришло|пришла|кэшбэк|кешбэк|вернули|возврат|дивиденд)/.test(text)) {
+    res.type = 'income';
+  }
+
+  // Валюта
+  if (/(доллар|бакс|usd)/.test(text) || text.includes('$')) res.currency = 'USD';
+
+  // Счёт (шаблоны узкие, чтобы «картошка» не попала в «карту»)
+  if (/(налич|налом|кэш(?!бэк)|кеш(?!бэк))/.test(text)) res.account = 'cash';
+  else if (/(крипт|биткоин|btc|usdt)/.test(text)) res.account = 'crypto';
+  else if (/(инвест|брокер)/.test(text)) res.account = 'invest';
+  else if (/(карто[йю]|по карте|с карты|на карту|безнал)/.test(text)) res.account = 'card';
+
+  // Дата ("позавчера" проверяем раньше, оно содержит "вчера")
+  let dateToken = null;
+  const today = new Date();
+  const shift = d => { const x = new Date(today); x.setDate(x.getDate() - d); return x.toISOString().split('T')[0]; };
+  if (/позавчера/.test(text)) res.date = shift(2);
+  else if (/вчера/.test(text)) res.date = shift(1);
+  else if (/сегодня/.test(text)) res.date = shift(0);
+  else {
+    const dm = text.match(/\b(\d{1,2})[.\-/](\d{1,2})(?:[.\-/](\d{2,4}))?\b/);
+    if (dm) {
+      const day = +dm[1], mon = +dm[2];
+      let year = dm[3] ? (dm[3].length === 2 ? 2000 + +dm[3] : +dm[3]) : today.getFullYear();
+      if (day >= 1 && day <= 31 && mon >= 1 && mon <= 12) {
+        res.date = `${year}-${String(mon).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+        dateToken = dm[0];
+      }
+    }
+  }
+
+  const tokens = text.split(' ').filter(Boolean);
+  // Сумму ищем в тексте без даты, иначе «15.03 такси 400» дало бы 15,03 ₽.
+  const amountText = dateToken ? text.replace(dateToken, ' ') : text;
+
+  // Сумма: сначала цифрами, иначе — прописью.
+  // Пробел склеиваем только в группах разрядов («1 500»), чтобы «400 500» не стало 400500.
+  const digitMatch = amountText.match(/\d{1,3}(?:[  ]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?/);
+  if (digitMatch) {
+    const n = parseFloat(digitMatch[0].replace(/[  ]/g, '').replace(',', '.'));
+    if (n > 0) res.amount = n;
+  }
+  if (!res.amount) {
+    for (let i = 0; i < tokens.length; i++) {
+      if (NUM_WORDS[tokens[i]] === undefined && MULT_WORDS[tokens[i]] === undefined) continue;
+      let j = i;
+      while (j < tokens.length && (NUM_WORDS[tokens[j]] !== undefined || MULT_WORDS[tokens[j]] !== undefined)) j++;
+      const n = wordsToNumber(tokens.slice(i, j));
+      if (n) { res.amount = n; break; }
+      i = j;
+    }
+  }
+  // «полторы тысячи» / «полтинник»
+  if (!res.amount && /полторы тысячи|полтора косаря/.test(text)) res.amount = 1500;
+
+  // Название: выкидываем числа и служебные слова
+  const nameTokens = tokens.filter(t => {
+    if (/^\d/.test(t)) return false;
+    if (NUM_WORDS[t] !== undefined || MULT_WORDS[t] !== undefined) return false;
+    if (STOP_WORDS.has(t)) return false;
+    return t.length > 1;
+  });
+  res.name = nameTokens.join(' ').trim();
+  res.cat = guessCategory(text, res.type);
+  if (res.name) res.name = res.name.charAt(0).toUpperCase() + res.name.slice(1);
+  return res;
+}
+
+let recognition = null;
+let voiceFromFab = false;
+
+function startVoice(fromFab) {
+  if (!state.voiceEnabled) { showToast('🎤 Голосовой ввод выключен в настройках'); return; }
+  const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!Rec) { showToast('🎤 Браузер не поддерживает распознавание речи'); return; }
+  if (recognition) return;
+
+  voiceFromFab = fromFab;
+  const overlay = document.getElementById('voice-overlay');
+  const textEl = document.getElementById('voice-text');
+  const hintEl = document.getElementById('voice-hint');
+  textEl.textContent = 'Слушаю…';
+  hintEl.textContent = 'Скажите, например: «кофе 250 рублей картой»';
+  overlay.classList.add('open');
+  haptic();
+
+  let finalText = '';
+  recognition = new Rec();
+  recognition.lang = 'ru-RU';
+  recognition.interimResults = true;
+  recognition.continuous = false;
+  recognition.maxAlternatives = 1;
+
+  recognition.onresult = e => {
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const chunk = e.results[i][0].transcript;
+      if (e.results[i].isFinal) finalText += chunk;
+      else interim += chunk;
+    }
+    textEl.textContent = (finalText + interim).trim() || 'Слушаю…';
+  };
+
+  recognition.onerror = e => {
+    const messages = {
+      'not-allowed': 'Нет доступа к микрофону — разрешите его в настройках браузера',
+      'service-not-allowed': 'Распознавание недоступно в этом браузере',
+      'no-speech': 'Ничего не услышал',
+      'network': 'Нет связи с сервисом распознавания',
+    };
+    hintEl.textContent = messages[e.error] || ('Ошибка: ' + e.error);
+    finalText = '';
+    setTimeout(() => { if (recognition) stopVoice(); }, 1800);
+  };
+
+  recognition.onend = () => {
+    recognition = null;
+    const said = finalText.trim();
+    document.getElementById('voice-overlay').classList.remove('open');
+    if (said) handleVoiceResult(said);
+  };
+
+  try {
+    recognition.start();
+  } catch (e) {
+    recognition = null;
+    overlay.classList.remove('open');
+    showToast('🎤 Не удалось запустить микрофон');
+  }
+}
+
+function stopVoice() {
+  const r = recognition;
+  recognition = null;
+  document.getElementById('voice-overlay').classList.remove('open');
+  if (r) { try { r.abort(); } catch (e) {} }
+}
+
+function handleVoiceResult(said) {
+  const parsed = parseVoice(said);
+  if (!parsed) { showToast('🎤 Не разобрал фразу'); return; }
+
+  // С FAB — открываем чистую форму; из модалки — дозаполняем текущую.
+  if (voiceFromFab) {
+    openAddModal();
+    setType(parsed.type);
+  } else if (parsed.type !== state.currentType) {
+    setType(parsed.type);
+  }
+
+  if (parsed.amount) document.getElementById('tx-amount').value = parsed.amount;
+  document.getElementById('tx-currency').value = parsed.currency;
+  document.getElementById('tx-account').value = parsed.account;
+  if (parsed.date) document.getElementById('tx-date').value = parsed.date;
+  if (parsed.name) document.getElementById('tx-name').value = parsed.name;
+  if (parsed.cat) { state.selectedCat = parsed.cat; renderCatGrid(); }
+
+  haptic('medium');
+  if (parsed.amount) {
+    showToast(`🎤 ${parsed.name || 'Операция'} · ${fmt(parsed.amount, parsed.currency)}`);
+  } else {
+    showToast('🎤 Сумму не разобрал — впишите вручную');
+    document.getElementById('tx-amount').focus();
+  }
+}
+
+function toggleVoiceEnabled() {
+  state.voiceEnabled = !state.voiceEnabled;
+  save();
+  initVoiceUI();
+  haptic();
+}
+
+// Кнопки микрофона показываются, только если браузер реально умеет распознавать речь.
+function initVoiceUI() {
+  const supported = voiceSupported();
+  const on = supported && state.voiceEnabled !== false;
+  document.getElementById('voice-fab').classList.toggle('hidden', !on);
+  document.getElementById('mic-inline').classList.toggle('hidden', !on);
+  const toggle = document.getElementById('voice-toggle');
+  if (toggle) {
+    toggle.classList.toggle('on', on);
+    toggle.disabled = !supported;
+    toggle.style.opacity = supported ? '1' : '0.4';
+  }
+  const note = document.getElementById('voice-support-note');
+  if (note) {
+    note.innerHTML = supported
+      ? ''
+      : '<br><br>❌ Этот браузер не поддерживает Web Speech API. На iOS работает в Safari, на Android — в Chrome.';
+  }
 }
 
 // ---- EXPORT/IMPORT ----
@@ -1734,11 +2414,15 @@ function importJSON(input) {
   reader.onload = e => {
     try {
       const data = JSON.parse(e.target.result);
-      if (!data.transactions) throw new Error('invalid');
+      if (!Array.isArray(data.transactions)) throw new Error('invalid');
+      // Отбрасываем записи без суммы — битый файл не должен ломать подсчёты.
+      data.transactions = data.transactions.filter(t => t && typeof t.amount === 'number' && t.date);
       if (!confirm(`Импортировать ${data.transactions.length} операций? Текущие данные будут заменены.`)) return;
       Object.assign(state, data);
-      state.goals = state.goals || [];
-      save(); renderHome();
+      state.goals = Array.isArray(state.goals) ? state.goals : [];
+      state.budgets = Array.isArray(state.budgets) ? state.budgets : [];
+      state.debts = Array.isArray(state.debts) ? state.debts : [];
+      save(); refreshAll();
       showToast('✅ Данные восстановлены');
     } catch(err) { alert('Ошибка импорта. Проверь файл.'); }
   };
@@ -1753,7 +2437,7 @@ function downloadFile(content, filename, type) {
 function clearAll() {
   if (confirm('Удалить все данные? Это нельзя отменить.')) {
     state.transactions = []; state.budgets = []; state.goals = []; state.debts = [];
-    save(); renderHome(); showToast('🗑️ Данные удалены');
+    save(); refreshAll(); showToast('🗑️ Данные удалены');
   }
 }
 
@@ -1772,11 +2456,12 @@ function applyRecurring() {
   ).map(t => t.recurringSource);
 
   let added = 0;
+  let idSeq = Date.now();
   recurring.forEach(tx => {
     if (alreadyThisMonth.includes(tx.id)) return;
     state.transactions.unshift({
       ...tx,
-      id: Date.now() + Math.random(),
+      id: ++idSeq,   // целочисленный id: дробный ломал сравнения и разметку
       date: `${thisMonth}-${String(now.getDate()).padStart(2,'0')}`,
       createdAt: new Date().toISOString(),
       recurringSource: tx.id,
@@ -1860,13 +2545,13 @@ function renderDebts() {
     <div class="debt-card">
       <div class="debt-header">
         <div class="debt-person">
-          ${d.type==='owe'?'👤':'👤'}
-          ${d.person}
+          👤
+          ${esc(d.person)}
           <span class="debt-badge ${d.type}">${d.type==='owe'?'Я должен':'Мне должны'}</span>
         </div>
         <div class="debt-amount ${d.type}">${fmtRub(d.amount)}</div>
       </div>
-      ${d.reason?`<div class="debt-reason">📝 ${d.reason}</div>`:''}
+      ${d.reason?`<div class="debt-reason">📝 ${esc(d.reason)}</div>`:''}
       <div class="debt-reason">📅 ${new Date(d.date).toLocaleDateString('ru-RU',{day:'numeric',month:'short',year:'numeric'})}</div>
       ${showClose ? `<div class="debt-actions">
         <button class="debt-btn close" onclick="closeDebt(${d.id})">✅ Закрыть</button>
@@ -1888,15 +2573,16 @@ function renderDebts() {
 
 load();
 if (state.darkMode === undefined) state.darkMode = true;
+if (state.voiceEnabled === undefined) state.voiceEnabled = true;
 if (!state.goals) state.goals = [];
 if (!state.debts) state.debts = [];
 applyTheme();
 renderCatGrid();
+applyRecurring();   // до первой отрисовки, иначе новые копии не видны сразу
 renderHome();
 renderHistory();
-applyRecurring();
-autoFetchRateIfStale();
-if (!state.rateUpdatedAt) fetchRate();
+initVoiceUI();
+autoFetchRateIfStale();  // сам решает, нужен ли запрос (ручной курс не трогает)
 
 // PWA — Service Worker
 if ('serviceWorker' in navigator) {
@@ -1909,6 +2595,10 @@ const urlParams = new URLSearchParams(window.location.search);
 const actionParam = urlParams.get('action');
 if (actionParam === 'expense' || actionParam === 'income') {
   setTimeout(() => { openAddModal(); if (actionParam === 'income') setType('income'); }, 400);
+} else if (actionParam === 'voice') {
+  setTimeout(() => startVoice(true), 500);
+} else if (actionParam === 'receipt') {
+  setTimeout(() => { openAddModal(); document.getElementById('ocr-input').click(); }, 500);
 }
 </script>
 </body>
